@@ -45,6 +45,10 @@ if __name__ == '__main__':
         model = backbones.resnet18(n_classes=n_classes)
     elif config['model'] == 'preactresnet18':
         model = backbones.preactresnet18(n_classes=n_classes)
+    elif config['model'] == 'mobilenet':
+        model = backbones.mobilenet(n_classes=n_classes)
+    elif config['model'] == 'shufflenet_1_0x_g8':
+        model = backbones.shufflenet_1_0x_g8(n_classes=n_classes)
     else:
         raise ValueError
     model.to(device=device)

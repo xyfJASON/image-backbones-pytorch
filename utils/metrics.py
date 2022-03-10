@@ -3,15 +3,14 @@ import numpy as np
 
 
 class SimpleClassificationEvaluator:
-    def __init__(self, n_classes: int) -> None:
-        self.n_classes = n_classes
+    def __init__(self) -> None:
         self.n_correct, self.n_tot = 0, 0
 
     def reset(self) -> None:
         self.n_correct, self.n_tot = 0, 0
 
     def update(self, pred_labels: Tensor, gt_labels: Tensor) -> None:
-        """ Add labels of a batch of images
+        """ Add labels of a batch of data
 
         Args:
             pred_labels: [K]
@@ -34,7 +33,7 @@ class ClassificationEvaluator:
         self.conf_mat = np.zeros((self.n_classes, self.n_classes))
 
     def update(self, pred_labels: Tensor, gt_labels: Tensor) -> None:
-        """ Add labels of a batch of images and update confusion matrix
+        """ Add labels of a batch of data and update confusion matrix
 
         Args:
             pred_labels: [K]
@@ -69,7 +68,7 @@ def _test():
     print(evaluator.Accuracy())
     print(evaluator.Macro_F1())
 
-    evaluator = SimpleClassificationEvaluator(n_classes=3)
+    evaluator = SimpleClassificationEvaluator()
     evaluator.update(pred[0:3], gt[0:3])
     evaluator.update(pred[3:], gt[3:])
     print(evaluator.Accuracy())

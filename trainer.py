@@ -4,7 +4,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from utils.metrics import SimpleClassificationEvaluator
-from utils.general_utils import optimizer_load_state_dict
+from utils.general_utils import optimizer_to_device
 
 
 class Trainer:
@@ -29,7 +29,8 @@ class Trainer:
         ckpt = torch.load(resume_path, map_location='cpu')
         self.model.load_state_dict(ckpt['model'])
         self.model.to(device=self.device)
-        optimizer_load_state_dict(self.optimizer, ckpt['optimizer'], self.device)
+        self.optimizer.load_state_dict(ckpt['optimizer'])
+        optimizer_to_device(self.optimizer, self.device)
         self.scheduler.load_state_dict(ckpt['scheduler'])
         start_epoch = ckpt['epoch'] + 1
         best_acc = ckpt['best_acc']
@@ -85,7 +86,7 @@ class Trainer:
     @torch.no_grad()
     def evaluate_acc(self, dataloader):
         self.model.eval()
-        evaluator = SimpleClassificationEvaluator(n_classes=self.n_classes)
+        evaluator = SimpleClassificationEvaluator()
         for X, y in tqdm(dataloader, desc='Evaluating', ncols=120, leave=False, colour='yellow'):
             X = X.to(device=self.device, dtype=torch.float32)
             y = y.to(device=self.device, dtype=torch.long)

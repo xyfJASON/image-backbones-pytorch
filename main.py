@@ -45,6 +45,10 @@ if __name__ == '__main__':
         model = backbones.resnet18(n_classes=n_classes)
     elif config['model'] == 'preactresnet18':
         model = backbones.preactresnet18(n_classes=n_classes)
+    elif config['model'] == 'se_resnet18':
+        model = backbones.se_resnet18(n_classes=n_classes)
+    elif config['model'] == 'cbam_resnet18':
+        model = backbones.cbam_resnet18(n_classes=n_classes)
     elif config['model'] == 'mobilenet':
         model = backbones.mobilenet(n_classes=n_classes)
     elif config['model'] == 'shufflenet_1_0x_g8':

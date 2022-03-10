@@ -4,6 +4,16 @@ Reproduce image classification models with PyTorch.
 
 
 
+## Training Process
+
+1. Modify the configuration file `config.yml`
+   - Choose `model`, `optimizer`, `scheduler`, etc.
+   - Set hyperparameters such as `batch_size`, `lr`, `epochs`, etc.
+   - Other settings such as `save_per_epochs`, `resume_path`, etc.
+2. run command: `python main.py`
+
+
+
 ## Results
 
 <table style="text-align:center">
@@ -27,6 +37,12 @@ Reproduce image classification models with PyTorch.
 </tr>
 <tr>
     <td>preactresnet18</td><td>11.2</td><td>95.30</td><td>77.34</td>
+</tr>
+<tr>
+    <td>se-resnet18</td><td>11.3</td><td>95.08</td><td>78.06</td>
+</tr>
+<tr>
+    <td>cbam-resnet18</td><td>11.3</td><td>95.27</td><td>76.77</td>
 </tr>
 <tr>
 	<td>mobilenet</td><td>3.22</td><td>92.34</td><td>70.70</td>

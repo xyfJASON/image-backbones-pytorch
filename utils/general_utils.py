@@ -4,8 +4,7 @@ import yaml
 import torch
 
 
-def optimizer_load_state_dict(optimizer, ckpt, device):
-    optimizer.load_state_dict(ckpt)
+def optimizer_to_device(optimizer, device):
     for state in optimizer.state.values():
         for k, v in state.items():
             if torch.is_tensor(v):

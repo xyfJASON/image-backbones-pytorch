@@ -25,8 +25,11 @@ def parse_config(config_path: str):
     print('logroot:', logroot)
     if os.path.exists(logroot):
         if (config.get('resume_path') is None) or (os.path.realpath(config['resume_path']).find(os.path.realpath(logroot)) == -1):
-            if input('logroot path already exists. Cover it anyway? y/n: ') == 'y':
+            opt = input('logroot path already exists. Choose an option: cover/continue/[exit]: ')
+            if opt == 'cover':
                 shutil.rmtree(logroot)
+            elif opt == 'continue':
+                pass
             else:
                 exit()
 
@@ -36,6 +39,7 @@ def parse_config(config_path: str):
     if not os.path.exists(os.path.join(logroot, 'tensorboard')):
         os.makedirs(os.path.join(logroot, 'tensorboard'))
 
-    shutil.copyfile('./config.yml', os.path.join(logroot, 'config.yml'))
+    if not os.path.exists(os.path.join(logroot, 'config.yml')):
+        shutil.copyfile('./config.yml', os.path.join(logroot, 'config.yml'))
 
     return config, device, logroot

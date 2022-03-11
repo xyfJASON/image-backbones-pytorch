@@ -1,29 +1,96 @@
 import os
 from tqdm import tqdm
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import torchvision.datasets as dset
+import torchvision.transforms as T
 
+import backbones
 from utils.metrics import SimpleClassificationEvaluator
-from utils.general_utils import optimizer_to_device
+from utils.general_utils import optimizer_to_device, parse_config
 
 
 class Trainer:
-    def __init__(self, device, model, optimizer, scheduler, criterion, train_loader, valid_loader,
-                 epochs, n_classes, log_root, save_per_epochs=None, resume_path=None):
-        self.device = device
-        self.model = model
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.criterion = criterion
-        self.train_loader = train_loader
-        self.valid_loader = valid_loader
-        self.epochs = epochs
-        self.n_classes = n_classes
-        self.log_root = log_root
-        self.save_per_epochs = save_per_epochs
-
+    def __init__(self, config_path: str):
+        self.config, self.device, self.log_root = parse_config(config_path)
+        self.train_loader, self.valid_loader, self.n_classes = self._get_data()
+        self.model, self.optimizer, self.scheduler, self.criterion = self._prepare_training()
+        self.start_epoch, self.best_acc = self.load_ckpt(self.config['resume_path']) if self.config['resume_path'] else (0, 0.0)
         self.writer = SummaryWriter(os.path.join(self.log_root, 'tensorboard'))
-        self.start_epoch, self.best_acc = self.load_ckpt(resume_path) if resume_path else (0, 0.0)
+
+    def _get_data(self):
+        print('==> Getting data...')
+        if self.config['dataset'] == 'cifar10':
+            mean, std = [0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616]
+            train_transforms = T.Compose([T.RandomCrop(32, padding=4), T.RandomHorizontalFlip(), T.ToTensor(), T.Normalize(mean, std)])
+            test_transforms = T.Compose([T.ToTensor(), T.Normalize(mean, std)])
+            train_set = dset.CIFAR10(root=self.config['dataroot'], train=True, transform=train_transforms, download=False)
+            test_set = dset.CIFAR10(root=self.config['dataroot'], train=False, transform=test_transforms, download=False)
+            n_classes = 10
+        elif self.config['dataset'] == 'cifar100':
+            mean, std = [0.5071, 0.4867, 0.4408], [0.2675, 0.2565, 0.2761]
+            train_transforms = T.Compose([T.RandomCrop(32, padding=4), T.RandomHorizontalFlip(), T.ToTensor(), T.Normalize(mean, std)])
+            test_transforms = T.Compose([T.ToTensor(), T.Normalize(mean, std)])
+            train_set = dset.CIFAR100(root=self.config['dataroot'], train=True, transform=train_transforms, download=False)
+            test_set = dset.CIFAR100(root=self.config['dataroot'], train=False, transform=test_transforms, download=False)
+            n_classes = 100
+        else:
+            raise ValueError(f"Dataset {self.config['dataset']} is not supported now.")
+        train_loader = DataLoader(train_set, batch_size=self.config['batch_size'], shuffle=True, num_workers=4, pin_memory=True)
+        test_loader = DataLoader(test_set, batch_size=self.config['batch_size'], num_workers=4, pin_memory=True)
+        return train_loader, test_loader, n_classes
+
+    def _prepare_training(self):
+        print('==> Preparing training...')
+        # =================== DEFINE MODEL =================== #
+        if self.config['model'] == 'vgg11':
+            model = backbones.vgg11(n_classes=self.n_classes)
+        elif self.config['model'] == 'vgg19_bn':
+            model = backbones.vgg19_bn(n_classes=self.n_classes)
+        elif self.config['model'] == 'resnet18':
+            model = backbones.resnet18(n_classes=self.n_classes)
+        elif self.config['model'] == 'preactresnet18':
+            model = backbones.preactresnet18(n_classes=self.n_classes)
+        elif self.config['model'] == 'resnext29_32x4d':
+            model = backbones.resnext29_32x4d(n_classes=self.n_classes)
+        elif self.config['model'] == 'resnext29_2x64d':
+            model = backbones.resnext29_2x64d(n_classes=self.n_classes)
+        elif self.config['model'] == 'se_resnet18':
+            model = backbones.se_resnet18(n_classes=self.n_classes)
+        elif self.config['model'] == 'cbam_resnet18':
+            model = backbones.cbam_resnet18(n_classes=self.n_classes)
+        elif self.config['model'] == 'mobilenet':
+            model = backbones.mobilenet(n_classes=self.n_classes)
+        elif self.config['model'] == 'shufflenet_1_0x_g8':
+            model = backbones.shufflenet_1_0x_g8(n_classes=self.n_classes)
+        else:
+            raise ValueError
+        model.to(device=self.device)
+        # =================== DEFINE OPTIMIZER =================== #
+        if self.config['optimizer']['choice'] == 'sgd':
+            cfg = self.config['optimizer']['sgd']
+            optimizer = optim.SGD(model.parameters(), lr=cfg['lr'],
+                                  weight_decay=cfg['weight_decay'], momentum=cfg['momentum'])
+        elif self.config['optimizer']['choice'] == 'adam':
+            cfg = self.config['optimizer']['adam']
+            optimizer = optim.Adam(model.parameters(), lr=cfg['lr'])
+        else:
+            raise ValueError
+        # =================== DEFINE SCHEDULER =================== #
+        if self.config['scheduler']['choice'] == 'cosineannealinglr':
+            cfg = self.config['scheduler']['cosineannealinglr']
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.config['epochs'], eta_min=cfg['eta_min'])
+        elif self.config['scheduler']['choice'] == 'multisteplr':
+            cfg = self.config['scheduler']['multisteplr']
+            scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg['milestones'], gamma=cfg['gamma'])
+        else:
+            raise ValueError
+        # =================== DEFINE CRITERION =================== #
+        criterion = nn.CrossEntropyLoss()
+        return model, optimizer, scheduler, criterion
 
     def load_ckpt(self, resume_path):
         ckpt = torch.load(resume_path, map_location='cpu')
@@ -46,22 +113,29 @@ class Trainer:
                     'best_acc': self.best_acc},
                    os.path.join(self.log_root, 'ckpt', f'epoch_{ep}.pt'))
 
+    def load_best_model(self, model_path):
+        self.model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        self.model.to(device=self.device)
+
+    def save_best_model(self, model_path):
+        torch.save(self.model.state_dict(), model_path)
+
     def train(self):
-        for ep in range(self.start_epoch, self.epochs):
+        print('==> Training...')
+        for ep in range(self.start_epoch, self.config['epochs']):
             self.train_one_epoch(ep)
 
             train_acc = self.evaluate_acc(self.train_loader)
             valid_acc = self.evaluate_acc(self.valid_loader)
-            print(f'train accuracy: {train_acc}')
-            print(f'valid accuracy: {valid_acc}')
+            print(f'train accuracy: {train_acc}\nvalid accuracy: {valid_acc}')
             self.writer.add_scalar('Acc/train', train_acc, ep)
             self.writer.add_scalar('Acc/valid', valid_acc, ep)
 
             if valid_acc > self.best_acc:
                 self.best_acc = valid_acc
-                torch.save(self.model.state_dict(), os.path.join(self.log_root, 'best_model.pt'))
+                self.save_best_model(os.path.join(self.log_root, 'best_model.pt'))
 
-            if self.save_per_epochs and (ep + 1) % self.save_per_epochs == 0:
+            if self.config['save_per_epochs'] and (ep + 1) % self.config['save_per_epochs'] == 0:
                 self.save_ckpt(ep)
 
         self.writer.close()
@@ -84,7 +158,9 @@ class Trainer:
         self.scheduler.step()
 
     @torch.no_grad()
-    def evaluate_acc(self, dataloader):
+    def evaluate_acc(self, dataloader=None):
+        if dataloader is None:
+            dataloader = self.valid_loader
         self.model.eval()
         evaluator = SimpleClassificationEvaluator()
         for X, y in tqdm(dataloader, desc='Evaluating', ncols=120, leave=False, colour='yellow'):

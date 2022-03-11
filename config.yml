@@ -1,13 +1,13 @@
 use_gpu: true
-exp_name: ~
+exp_name: resnext29_32x4d_cifar100
 
-dataset: cifar10  # cifar10 / cifar100
+dataset: cifar100  # cifar10 / cifar100
 dataroot: ../data
 
 epochs: 160
 batch_size: 256
 
-model: cbam_resnet18
+model: resnext29_32x4d
 
 optimizer:
   choice: sgd

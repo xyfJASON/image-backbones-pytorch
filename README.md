@@ -39,6 +39,9 @@ Reproduce image classification models with PyTorch.
     <td>preactresnet18</td><td>11.2</td><td>95.30</td><td>77.34</td>
 </tr>
 <tr>
+    <td>resnext29 (32x4d)</td><td>4.78</td><td>94.68</td><td>78.62</td>
+</tr>
+<tr>
     <td>se-resnet18</td><td>11.3</td><td>95.08</td><td>78.06</td>
 </tr>
 <tr>

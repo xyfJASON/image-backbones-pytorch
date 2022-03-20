@@ -40,6 +40,6 @@ def parse_config(config_path: str):
         os.makedirs(os.path.join(logroot, 'tensorboard'))
 
     if not os.path.exists(os.path.join(logroot, 'config.yml')):
-        shutil.copyfile('./config.yml', os.path.join(logroot, 'config.yml'))
+        shutil.copyfile(config_path, os.path.join(logroot, 'config.yml'))
 
     return config, device, logroot

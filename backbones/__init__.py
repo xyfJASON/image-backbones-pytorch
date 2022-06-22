@@ -6,3 +6,4 @@ from .SE_ResNet import *
 from .CBAM_ResNet import *
 from .MobileNet import *
 from .ShuffleNet import *
+from .ViT import *

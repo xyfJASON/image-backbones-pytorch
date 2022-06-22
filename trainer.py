@@ -66,17 +66,22 @@ class Trainer:
             model = backbones.mobilenet(n_classes=self.n_classes)
         elif self.config['model'] == 'shufflenet_1_0x_g8':
             model = backbones.shufflenet_1_0x_g8(n_classes=self.n_classes)
+        elif self.config['model'] == 'vit_tiny':
+            model = backbones.vit_tiny(n_classes=self.n_classes, img_size=32, patch_size=4)
+        elif self.config['model'] == 'vit_small':
+            model = backbones.vit_small(n_classes=self.n_classes, img_size=32, patch_size=4)
+        elif self.config['model'] == 'vit_base':
+            model = backbones.vit_base(n_classes=self.n_classes, img_size=32, patch_size=4)
         else:
             raise ValueError
         model.to(device=self.device)
         # =================== DEFINE OPTIMIZER =================== #
         if self.config['optimizer']['choice'] == 'sgd':
             cfg = self.config['optimizer']['sgd']
-            optimizer = optim.SGD(model.parameters(), lr=cfg['lr'],
-                                  weight_decay=cfg['weight_decay'], momentum=cfg['momentum'])
+            optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], weight_decay=cfg['weight_decay'], momentum=cfg['momentum'])
         elif self.config['optimizer']['choice'] == 'adam':
             cfg = self.config['optimizer']['adam']
-            optimizer = optim.Adam(model.parameters(), lr=cfg['lr'])
+            optimizer = optim.Adam(model.parameters(), lr=cfg['lr'], weight_decay=cfg['weight_decay'])
         else:
             raise ValueError
         # =================== DEFINE SCHEDULER =================== #

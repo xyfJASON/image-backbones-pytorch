@@ -53,5 +53,11 @@ Reproduce image classification models with PyTorch.
 <tr>
 	<td>shufflenet 1x (g=8)</td><td>0.91</td><td>92.18</td><td>71.83</td>
 </tr>
+<tr>
+	<td>vit-tiny-patch4-32</td><td>5.36</td><td>85.83</td><td>56.98</td>
+</tr>
+<tr>
+	<td>vit-small-patch4-32</td><td>21.34</td><td>85.79</td><td>58.31</td>
+</tr>
 </table>
 

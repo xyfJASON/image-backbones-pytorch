@@ -2,6 +2,7 @@ import os
 import shutil
 import yaml
 import torch
+import datetime
 
 
 def optimizer_to_device(optimizer, device):
@@ -16,7 +17,7 @@ def parse_config(config_path: str):
         config = yaml.safe_load(f)
 
     if config['exp_name'] is None:
-        raise ValueError('exp_name missing')
+        config['exp_name'] = datetime.datetime.now().strftime('exp-%Y-%m-%d-%H-%M-%S')
 
     device = torch.device('cuda' if config['use_gpu'] and torch.cuda.is_available() else 'cpu')
     print('using device:', device)

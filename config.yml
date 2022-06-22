@@ -4,24 +4,25 @@ exp_name: ~
 dataset: cifar10  # cifar10 / cifar100
 dataroot: ../data
 
-epochs: 160
+epochs: 200
 batch_size: 256
 
-model: cbam_resnet18
+model: vit_small
 
 optimizer:
-  choice: sgd
+  choice: adam
   sgd:
-    lr: 0.1
+    lr: 0.001
     weight_decay: 0.0005
     momentum: 0.9
   adam:
-    lr: 0.1
+    lr: 0.001
+    weight_decay: 0.00005
 
 scheduler:
   choice: cosineannealinglr
   cosineannealinglr:
-    eta_min: 0.001
+    eta_min: 0.00001
   multisteplr:
     gamma: 0.1
     milestones: [80, 120]

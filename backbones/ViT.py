@@ -5,8 +5,6 @@ An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale
 https://arxiv.org/abs/2010.11929
 """
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,6 +18,9 @@ class SelfAttention(nn.Module):
         super().__init__()
         assert embed_dim % n_head == 0
         self.n_head = n_head
+        head_dim = embed_dim // n_head
+        self.scale = head_dim ** -0.5
+
         self.key = nn.Linear(embed_dim, embed_dim)
         self.query = nn.Linear(embed_dim, embed_dim)
         self.value = nn.Linear(embed_dim, embed_dim)
@@ -39,7 +40,7 @@ class SelfAttention(nn.Module):
         k = self.key(X).view(bs, nt, self.n_head, ed // self.n_head).permute(0, 2, 1, 3)    # [bs, nh, nt, dim]
         q = self.query(X).view(bs, nt, self.n_head, ed // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
         v = self.value(X).view(bs, nt, self.n_head, ed // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
-        attn_mat = (q @ k.transpose(2, 3)) / math.sqrt(k.shape[-1])                        # [bs, nh, nt, nt]
+        attn_mat = (q @ k.transpose(2, 3)) * self.scale                                     # [bs, nh, nt, nt]
         attn_mat = F.softmax(attn_mat, dim=-1)
         output = attn_mat @ v                                                               # [bs, nh, nt, dim]
         output = output.permute(0, 2, 1, 3).reshape(bs, nt, ed)                             # [bs, nt, ed]

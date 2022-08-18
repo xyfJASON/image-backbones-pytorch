@@ -4,6 +4,7 @@ Very Deep Convolutional Networks for Large-Scale Image Recognition
 https://arxiv.org/abs/1409.1556
 """
 
+from typing import List
 import torch
 import torch.nn as nn
 
@@ -19,23 +20,23 @@ def weights_init(m):
         nn.init.constant_(m.bias, 0)
 
 
-def conv3re(in_channels: int, out_channels: int) -> nn.Sequential:
+def conv3re(in_channels: int, out_channels: int):
     return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True),  # noqa
+        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True),
         nn.ReLU(inplace=True),
     )
 
 
-def conv3bnre(in_channels: int, out_channels: int) -> nn.Sequential:
+def conv3bnre(in_channels: int, out_channels: int):
     return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),  # noqa
+        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
         nn.BatchNorm2d(out_channels),
         nn.ReLU(inplace=True)
     )
 
 
 class VGG(nn.Module):
-    def __init__(self, cfg: list, bn: bool, n_classes: int) -> None:
+    def __init__(self, cfg: List, bn: bool, n_classes: int) -> None:
         super().__init__()
         self.features = self._make_layer(cfg, bn)
         self.flatten = nn.Flatten()
@@ -43,7 +44,8 @@ class VGG(nn.Module):
         self.classifier = nn.Linear(512, n_classes)
         self.apply(weights_init)
 
-    def _make_layer(self, cfg: list, bn: bool) -> nn.Sequential:  # noqa
+    @staticmethod
+    def _make_layer(cfg: List, bn: bool):
         layers = []
         lst = 3
         for x in cfg:

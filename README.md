@@ -9,8 +9,21 @@ Reproduce image classification models with PyTorch.
 1. Modify the configuration file `config.yml`
    - Choose `model`, `optimizer`, `scheduler`, etc.
    - Set hyperparameters such as `batch_size`, `lr`, `epochs`, etc.
-   - Other settings such as `save_per_epochs`, `resume_path`, etc.
-2. run command: `python main.py`
+   - Other settings such as `save_freq`, `resume`, etc.
+
+2. Start training
+
+   For single GPU / CPU, run command:
+
+   ```shell
+   python train.py
+   ```
+
+   For multiple GPUs (e.g. 2 GPUs), run command:
+
+   ```shell
+   torchrun --nproc_per_node 2 train.py
+   ```
 
 
 
@@ -60,4 +73,3 @@ Reproduce image classification models with PyTorch.
 	<td>vit-small-patch4-32</td><td>21.34</td><td>85.79</td><td>58.31</td>
 </tr>
 </table>
-

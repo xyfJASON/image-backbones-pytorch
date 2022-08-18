@@ -4,6 +4,7 @@ ShuffleNet: An Extremely Efficient Convolutional Neural Network for Mobile Devic
 https://arxiv.org/abs/1707.01083
 """
 
+from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,13 +21,13 @@ def weights_init(m):
         nn.init.constant_(m.bias, 0)
 
 
-def channel_shuffle(X: torch.Tensor, n_groups: int) -> torch.Tensor:
+def channel_shuffle(X: torch.Tensor, n_groups: int):
     N, C, H, W = X.shape; c = C // n_groups
     return torch.transpose(X.view(N, n_groups, c, H, W), 1, 2).contiguous().view(N, C, H, W)
 
 
 class BasicUnit(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, n_groups: int, reduce: bool) -> None:
+    def __init__(self, in_channels: int, out_channels: int, n_groups: int, reduce: bool):
         super().__init__()
         self.n_groups = n_groups
         self.reduce = reduce
@@ -41,7 +42,7 @@ class BasicUnit(nn.Module):
         self.bn3 = nn.BatchNorm2d(out_channels)
         self.avgpool = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         out = F.relu(self.bn1(self.conv1(X)), inplace=True)
         out = channel_shuffle(out, self.n_groups)
         out = self.bn2(self.conv2(out))
@@ -52,7 +53,7 @@ class BasicUnit(nn.Module):
 
 
 class ShuffleNet(nn.Module):
-    def __init__(self, n_blocks: list[int], hidden_channels: int, n_groups: int, first_block: nn.Module, n_classes: int) -> None:
+    def __init__(self, n_blocks: List[int], hidden_channels: int, n_groups: int, first_block: nn.Module, n_classes: int):
         super().__init__()
         self.first_block = first_block
         self.stage2 = self._make_layer(24, hidden_channels, n_blocks[0], n_groups)
@@ -63,12 +64,13 @@ class ShuffleNet(nn.Module):
         self.fc = nn.Linear(hidden_channels*4, n_classes)
         self.apply(weights_init)
 
-    def _make_layer(self, in_channels: int, out_channels: int, n_block: int, n_groups: int) -> nn.Sequential:  # noqa
+    @staticmethod
+    def _make_layer(in_channels: int, out_channels: int, n_block: int, n_groups: int):
         layers = [BasicUnit(in_channels, out_channels, n_groups, True)]
         layers.extend([BasicUnit(out_channels, out_channels, n_groups, False) for _ in range(n_block-1)])
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         X = self.first_block(X)
         X = self.stage2(X)
         X = self.stage3(X)
@@ -79,7 +81,7 @@ class ShuffleNet(nn.Module):
         return X
 
 
-def imagenet_first_block() -> nn.Sequential:
+def imagenet_first_block():
     return nn.Sequential(
         nn.Conv2d(3, 24, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False),
         nn.BatchNorm2d(24),
@@ -88,7 +90,7 @@ def imagenet_first_block() -> nn.Sequential:
     )
 
 
-def cifar10_first_block() -> nn.Sequential:
+def cifar10_first_block():
     return nn.Sequential(
         nn.Conv2d(3, 24, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
         nn.BatchNorm2d(24),
@@ -124,7 +126,7 @@ def shufflenet_1_0x_g2(n_classes: int, first_block: str = 'cifar10'):
     return model
 
 
-def _test() -> None:
+def _test():
     model = shufflenet_1_0x_g8(n_classes=10)
     X = torch.randn(10, 3, 32, 32)
     out = model(X)

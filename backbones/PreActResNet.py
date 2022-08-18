@@ -4,6 +4,7 @@ Identity Mappings in Deep Residual Networks
 https://arxiv.org/abs/1603.05027
 """
 
+from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,21 +21,21 @@ def weights_init(m):
         nn.init.constant_(m.bias, 0)
 
 
-def conv3x3(in_channels: int, out_channels: int, stride: int) -> nn.Conv2d:
-    return nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)  # noqa
+def conv3x3(in_channels: int, out_channels: int, stride: int):
+    return nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
 
 
-def conv1x1(in_channels: int, out_channels: int, stride: int) -> nn.Conv2d:
-    return nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)  # noqa
+def conv1x1(in_channels: int, out_channels: int, stride: int):
+    return nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
 
 
-def cifar10_first_block() -> nn.Conv2d:
+def cifar10_first_block():
     """ 3x32x32 -> 64x32x32 """
     return nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
 
 
 class PreActBasicBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, reduce: bool) -> None:
+    def __init__(self, in_channels: int, out_channels: int, reduce: bool):
         super().__init__()
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = conv3x3(in_channels, out_channels, 2 if reduce else 1)
@@ -47,7 +48,7 @@ class PreActBasicBlock(nn.Module):
                 conv1x1(in_channels, out_channels, 2 if reduce else 1),
             )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         out = self.conv1(F.relu(self.bn1(X), inplace=True))
         out = self.conv2(F.relu(self.bn2(out), inplace=True))
         out += self.shortcut(X)
@@ -55,7 +56,7 @@ class PreActBasicBlock(nn.Module):
 
 
 class PreActBottleneckBlock(nn.Module):
-    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, reduce: bool) -> None:
+    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, reduce: bool):
         super().__init__()
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = conv1x1(in_channels, mid_channels, 2 if reduce else 1)
@@ -70,7 +71,7 @@ class PreActBottleneckBlock(nn.Module):
                 nn.BatchNorm2d(out_channels),
             )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         out = self.conv1(F.relu(self.bn1(X), inplace=True))
         out = self.conv2(F.relu(self.bn2(out), inplace=True))
         out = self.conv3(F.relu(self.bn3(out), inplace=True))
@@ -79,7 +80,7 @@ class PreActBottleneckBlock(nn.Module):
 
 
 class PreActResNet(nn.Module):
-    def __init__(self, block_type: str, n_blocks: list[int], first_block: nn.Module, n_classes: int) -> None:
+    def __init__(self, block_type: str, n_blocks: List[int], first_block: nn.Module, n_classes: int):
         assert block_type == 'basic' or block_type == 'bottleneck'
         super().__init__()
         self.first_block = first_block
@@ -105,8 +106,8 @@ class PreActResNet(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def _make_layer(self, ResidualBlock: PreActBasicBlock or PreActBottleneckBlock,  # noqa
-                    n_block: int, channels: list[int], reduce: bool) -> nn.Sequential:
+    @staticmethod
+    def _make_layer(ResidualBlock, n_block: int, channels: List[int], reduce: bool):
         layers = []
         for _ in range(n_block):
             layers.append(ResidualBlock(*channels, reduce=reduce))
@@ -114,7 +115,7 @@ class PreActResNet(nn.Module):
             reduce = False
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         X = self.first_block(X)
         X = self.conv2_x(X)
         X = self.conv3_x(X)
@@ -127,27 +128,27 @@ class PreActResNet(nn.Module):
         return X
 
 
-def preactresnet18(n_classes) -> PreActResNet:
+def preactresnet18(n_classes):
     return PreActResNet('basic', [2, 2, 2, 2], cifar10_first_block(), n_classes=n_classes)
 
 
-def preactresnet34(n_classes) -> PreActResNet:
+def preactresnet34(n_classes):
     return PreActResNet('basic', [3, 4, 6, 3], cifar10_first_block(), n_classes=n_classes)
 
 
-def preactresnet50(n_classes) -> PreActResNet:
+def preactresnet50(n_classes):
     return PreActResNet('bottleneck', [3, 4, 6, 3], cifar10_first_block(), n_classes=n_classes)
 
 
-def preactresnet101(n_classes) -> PreActResNet:
+def preactresnet101(n_classes):
     return PreActResNet('bottleneck', [3, 4, 23, 3], cifar10_first_block(), n_classes=n_classes)
 
 
-def preactresnet152(n_classes) -> PreActResNet:
+def preactresnet152(n_classes):
     return PreActResNet('bottleneck', [3, 8, 36, 3], cifar10_first_block(), n_classes=n_classes)
 
 
-def _test() -> None:
+def _test():
     model = preactresnet18(n_classes=10)
     X = torch.randn(10, 3, 32, 32)
     out = model(X)

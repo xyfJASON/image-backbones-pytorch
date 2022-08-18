@@ -19,19 +19,19 @@ def weights_init(m):
         nn.init.constant_(m.bias, 0)
 
 
-def DSConvBnRe(in_channels: int, out_channels: int, reduce: bool) -> nn.Sequential:
+def DSConvBnRe(in_channels: int, out_channels: int, reduce: bool):
     return nn.Sequential(
-        nn.Conv2d(in_channels, in_channels, kernel_size=(3, 3), stride=2 if reduce else 1, padding=1, bias=False, groups=in_channels),  # noqa
+        nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2 if reduce else 1, padding=1, bias=False, groups=in_channels),
         nn.BatchNorm2d(in_channels),
         nn.ReLU(inplace=True),
-        nn.Conv2d(in_channels, out_channels, kernel_size=(1, 1), stride=(1, 1), bias=False),
+        nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, bias=False),
         nn.BatchNorm2d(out_channels),
         nn.ReLU(inplace=True),
     )
 
 
 class MobileNet(nn.Module):
-    def __init__(self, first_block: nn.Module, n_classes: int) -> None:
+    def __init__(self, first_block: nn.Module, n_classes: int):
         super().__init__()
         self.first_block = first_block
         self.conv1 = DSConvBnRe(32, 64, reduce=False)
@@ -52,7 +52,7 @@ class MobileNet(nn.Module):
         self.fc = nn.Linear(1024, n_classes)
         self.apply(weights_init)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         X = self.first_block(X)
         X = self.conv1(X)
         X = self.conv2(X)
@@ -73,7 +73,7 @@ class MobileNet(nn.Module):
         return X
 
 
-def imagenet_first_block() -> nn.Sequential:
+def imagenet_first_block():
     return nn.Sequential(
         nn.Conv2d(3, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False),
         nn.BatchNorm2d(32),
@@ -82,7 +82,7 @@ def imagenet_first_block() -> nn.Sequential:
     )
 
 
-def cifar10_first_block() -> nn.Sequential:
+def cifar10_first_block():
     return nn.Sequential(
         nn.Conv2d(3, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
         nn.BatchNorm2d(32),
@@ -90,7 +90,7 @@ def cifar10_first_block() -> nn.Sequential:
     )
 
 
-def mobilenet(n_classes, first_block: str = 'cifar10') -> MobileNet:
+def mobilenet(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
     model = MobileNet(first_block, n_classes=n_classes)

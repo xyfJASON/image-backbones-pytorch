@@ -4,6 +4,7 @@ Aggregated Residual Transformations for Deep Neural Networks
 https://arxiv.org/abs/1611.05431
 """
 
+from typing import List, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,15 +21,15 @@ def weights_init(m):
         nn.init.constant_(m.bias, 0)
 
 
-def conv3x3(in_channels: int, out_channels: int, stride: int, groups: int) -> nn.Conv2d:
-    return nn.Conv2d(in_channels, out_channels, 3, stride=stride, padding=1, bias=False, groups=groups)  # noqa
+def conv3x3(in_channels: int, out_channels: int, stride: int, groups: int):
+    return nn.Conv2d(in_channels, out_channels, 3, stride=stride, padding=1, bias=False, groups=groups)
 
 
-def conv1x1(in_channels: int, out_channels: int, stride: int) -> nn.Conv2d:
-    return nn.Conv2d(in_channels, out_channels, 1, stride=stride, bias=False)  # noqa
+def conv1x1(in_channels: int, out_channels: int, stride: int):
+    return nn.Conv2d(in_channels, out_channels, 1, stride=stride, bias=False)
 
 
-def imagenet_first_block() -> nn.Sequential:
+def imagenet_first_block():
     return nn.Sequential(
         nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
         nn.BatchNorm2d(64),
@@ -37,7 +38,7 @@ def imagenet_first_block() -> nn.Sequential:
     )
 
 
-def cifar10_first_block() -> nn.Sequential:
+def cifar10_first_block():
     return nn.Sequential(
         nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
         nn.BatchNorm2d(64),
@@ -46,7 +47,7 @@ def cifar10_first_block() -> nn.Sequential:
 
 
 class BottleneckBlock(nn.Module):
-    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, cardinality: int, reduce: bool) -> None:
+    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, cardinality: int, reduce: bool):
         super().__init__()
         assert mid_channels % cardinality == 0
         self.conv1 = conv1x1(in_channels, mid_channels, 2 if reduce else 1)
@@ -62,7 +63,7 @@ class BottleneckBlock(nn.Module):
                 nn.BatchNorm2d(out_channels),
             )
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         out = F.relu(self.bn1(self.conv1(X)), inplace=True)
         out = F.relu(self.bn2(self.conv2(out)), inplace=True)
         out = F.relu(self.bn3(self.conv3(out)) + self.shortcut(X), inplace=True)
@@ -70,7 +71,7 @@ class BottleneckBlock(nn.Module):
 
 
 class ResNeXt(nn.Module):
-    def __init__(self, n_blocks: list[int], cfg: tuple[int, int], first_block: nn.Module, n_classes: int) -> None:
+    def __init__(self, n_blocks: List[int], cfg: Tuple[int, int], first_block: nn.Module, n_classes: int):
         super().__init__()
         self.first_block = first_block
         self.in_channels = 64
@@ -84,7 +85,7 @@ class ResNeXt(nn.Module):
         self.fc = nn.Linear(self.cardinality * self.width, n_classes)
         self.apply(weights_init)
 
-    def _make_layer(self, n_block: int, reduce: bool) -> nn.Sequential:
+    def _make_layer(self, n_block: int, reduce: bool):
         layers = []
         for _ in range(n_block):
             channels = self.cardinality * self.width
@@ -94,7 +95,7 @@ class ResNeXt(nn.Module):
         self.width *= 2
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor):
         X = self.first_block(X)
         X = self.conv2(X)
         X = self.conv3(X)
@@ -106,42 +107,42 @@ class ResNeXt(nn.Module):
         return X
 
 
-def resnext29_2x64d(n_classes, first_block: str = 'cifar10') -> ResNeXt:
+def resnext29_2x64d(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
     model = ResNeXt([3, 3, 3], (2, 64), first_block, n_classes=n_classes)
     return model
 
 
-def resnext29_32x4d(n_classes, first_block: str = 'cifar10') -> ResNeXt:
+def resnext29_32x4d(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
     model = ResNeXt([3, 3, 3], (32, 4), first_block, n_classes=n_classes)
     return model
 
 
-def resnext50_32x4d(n_classes, first_block: str = 'cifar10') -> ResNeXt:
+def resnext50_32x4d(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
     model = ResNeXt([3, 4, 6, 3], (32, 4), first_block, n_classes=n_classes)
     return model
 
 
-def resnext101_32x4d(n_classes, first_block: str = 'cifar10') -> ResNeXt:
+def resnext101_32x4d(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
     model = ResNeXt([3, 4, 23, 3], (32, 4), first_block, n_classes=n_classes)
     return model
 
 
-def resnext101_64x4d(n_classes, first_block: str = 'cifar10') -> ResNeXt:
+def resnext101_64x4d(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
     model = ResNeXt([3, 4, 23, 3], (64, 4), first_block, n_classes=n_classes)
     return model
 
 
-def _test() -> None:
+def _test():
     model = resnext29_32x4d(n_classes=10)
     X = torch.randn(10, 3, 32, 32)
     out = model(X)

@@ -4,7 +4,7 @@ https://github.com/rwightman/pytorch-image-models/blob/master/timm/utils/metrics
 
 
 class AverageMeter:
-    """Computes and stores the average and current value"""
+    """ Computes and stores the average and current value """
     def __init__(self):
         self.val = 0
         self.avg = 0
@@ -22,7 +22,7 @@ class AverageMeter:
 
 
 def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
+    """ Computes the accuracy over the k top predictions for the specified values of k """
     maxk = min(max(topk), output.size()[1])
     batch_size = target.size(0)
     _, pred = output.topk(maxk, 1, True, True)

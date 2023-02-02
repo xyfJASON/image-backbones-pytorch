@@ -1,0 +1,14 @@
+MODEL:
+  NAME: vit_tiny
+
+DATALOADER:
+  BATCH_SIZE: 512
+
+TRAIN:
+  OPTIM:
+    NAME: Adam
+    LR: 0.001
+    WEIGHT_DECAY: 0.00005
+  
+  SCHED:
+    COSINE_ETA_MIN: 0.00001

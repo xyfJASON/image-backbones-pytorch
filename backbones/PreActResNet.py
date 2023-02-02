@@ -148,16 +148,22 @@ def preactresnet152(n_classes):
     return PreActResNet('bottleneck', [3, 8, 36, 3], cifar10_first_block(), n_classes=n_classes)
 
 
-def _test():
-    model = preactresnet18(n_classes=10)
-    X = torch.randn(10, 3, 32, 32)
-    out = model(X)
-    print(out.shape)
-    print(sum(param.numel() for param in model.parameters() if param.requires_grad))
-    # from torch.utils.tensorboard import SummaryWriter
-    # with SummaryWriter('arch/preactresnet18') as w:
-    #     w.add_graph(model, X)
+def _test_overhead():
+    import os
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from utils.overhead import calc_flops, count_params, calc_inference_time
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = preactresnet18(n_classes=10).to(device)
+    X = torch.randn(10, 3, 32, 32).to(device)
+
+    count_params(model)
+    print('=' * 60)
+    calc_flops(model, X)
+    print('=' * 60)
+    calc_inference_time(model, X)
 
 
 if __name__ == '__main__':
-    _test()
+    _test_overhead()

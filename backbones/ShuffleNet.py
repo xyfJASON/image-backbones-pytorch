@@ -22,7 +22,8 @@ def weights_init(m):
 
 
 def channel_shuffle(X: torch.Tensor, n_groups: int):
-    N, C, H, W = X.shape; c = C // n_groups
+    N, C, H, W = X.shape
+    c = int(C) // n_groups
     return torch.transpose(X.view(N, n_groups, c, H, W), 1, 2).contiguous().view(N, C, H, W)
 
 
@@ -126,16 +127,22 @@ def shufflenet_1_0x_g2(n_classes: int, first_block: str = 'cifar10'):
     return model
 
 
-def _test():
-    model = shufflenet_1_0x_g8(n_classes=10)
-    X = torch.randn(10, 3, 32, 32)
-    out = model(X)
-    print(out.shape)
-    print(sum(param.numel() for param in model.parameters() if param.requires_grad))
-    # from torch.utils.tensorboard import SummaryWriter
-    # with SummaryWriter('arch/shufflenet_1_0x_g8') as w:
-    #     w.add_graph(model, X)
+def _test_overhead():
+    import os
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from utils.overhead import calc_flops, count_params, calc_inference_time
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = shufflenet_1_0x_g8(n_classes=10).to(device)
+    X = torch.randn(10, 3, 32, 32).to(device)
+
+    count_params(model)
+    print('=' * 60)
+    calc_flops(model, X)
+    print('=' * 60)
+    calc_inference_time(model, X)
 
 
 if __name__ == '__main__':
-    _test()
+    _test_overhead()

@@ -37,13 +37,13 @@ class SelfAttention(nn.Module):
 
         """
         bs, nt, ed = X.shape
-        k = self.key(X).view(bs, nt, self.n_head, ed // self.n_head).permute(0, 2, 1, 3)    # [bs, nh, nt, dim]
-        q = self.query(X).view(bs, nt, self.n_head, ed // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
-        v = self.value(X).view(bs, nt, self.n_head, ed // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
-        attn_mat = (q @ k.transpose(2, 3)) * self.scale                                     # [bs, nh, nt, nt]
+        k = self.key(X).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)    # [bs, nh, nt, dim]
+        q = self.query(X).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
+        v = self.value(X).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
+        attn_mat = (q @ k.transpose(2, 3)) * self.scale                                          # [bs, nh, nt, nt]
         attn_mat = F.softmax(attn_mat, dim=-1)
-        output = attn_mat @ v                                                               # [bs, nh, nt, dim]
-        output = output.permute(0, 2, 1, 3).reshape(bs, nt, ed)                             # [bs, nt, ed]
+        output = attn_mat @ v                                                                    # [bs, nh, nt, dim]
+        output = output.permute(0, 2, 1, 3).reshape(bs, nt, ed)                                  # [bs, nt, ed]
         output = self.dropout(self.proj(output))
         return output
 
@@ -130,16 +130,22 @@ def vit_huge(n_classes: int, img_size: int = 224, patch_size: int = 32, pdrop: f
     return ViT(img_size=img_size, patch_size=patch_size, n_layer=32, embed_dim=1280, n_head=16, pdrop=pdrop, n_classes=n_classes)
 
 
-def _test():
-    model = vit_small(n_classes=10, img_size=32, patch_size=4)
-    X = torch.randn(10, 3, 32, 32)
-    out = model(X)
-    print(out.shape)
-    print(sum(param.numel() for param in model.parameters() if param.requires_grad))
-    # from torch.utils.tensorboard import SummaryWriter
-    # with SummaryWriter('arch/vit_tiny') as w:
-    #     w.add_graph(model, X)
+def _test_overhead():
+    import os
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from utils.overhead import calc_flops, count_params, calc_inference_time
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = vit_tiny(n_classes=10, img_size=32, patch_size=4).to(device)
+    X = torch.randn(1, 3, 32, 32).to(device)
+
+    count_params(model)
+    print('=' * 60)
+    calc_flops(model, X)
+    print('=' * 60)
+    calc_inference_time(model, X)
 
 
 if __name__ == '__main__':
-    _test()
+    _test_overhead()

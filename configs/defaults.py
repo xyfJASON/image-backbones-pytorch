@@ -3,10 +3,11 @@ from yacs.config import CfgNode as CN
 
 _C = CN()
 _C.SEED = 1234                          # random seed
-_C.CUDA_DETERMINISTIC = False           # set cuda operations deterministic
 
 _C.MODEL = CN()
 _C.MODEL.NAME = 'resnet18'              # name of the model
+_C.MODEL.FIRST_BLOCK = 'cifar10'        # only for models that require this argument. Options: 'cifar10' or 'imagenet'
+_C.MODEL.PATCH_SIZE = 4                 # only for models that require this argument, typically Vision Transformers
 _C.MODEL.WEIGHTS = None                 # path to the pretrained weights
 
 _C.DATA = CN()
@@ -26,7 +27,7 @@ _C.DATALOADER.MICRO_BATCH = 0           # in case the GPU memory is too small, s
 _C.TRAIN = CN()
 _C.TRAIN.TRAIN_STEPS = 64000            # training duration, one step means one gradient update
 _C.TRAIN.RESUME = None                  # options: path to checkpoint, 'best', 'latest', None
-_C.TRAIN.PRINT_FREQ = 400               # frequency of printing status, in steps
+_C.TRAIN.PRINT_FREQ = 200               # frequency of printing status, in steps
 _C.TRAIN.SAVE_FREQ = 5000               # frequency of saving checkpoints, in steps
 _C.TRAIN.EVAL_FREQ = 1000               # frequency of evaluating the model, in steps
 _C.TRAIN.USE_FP16 = False               # whether to use fp16

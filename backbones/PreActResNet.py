@@ -29,6 +29,16 @@ def conv1x1(in_channels: int, out_channels: int, stride: int):
     return nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
 
 
+def imagenet_first_block():
+    """ 3x224x224 -> 64x112x112 -> 64x64x64 """
+    return nn.Sequential(
+        nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
+        nn.BatchNorm2d(64),
+        nn.ReLU(inplace=True),
+        nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+    )
+
+
 def cifar10_first_block():
     """ 3x32x32 -> 64x32x32 """
     return nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
@@ -128,24 +138,34 @@ class PreActResNet(nn.Module):
         return X
 
 
-def preactresnet18(n_classes):
-    return PreActResNet('basic', [2, 2, 2, 2], cifar10_first_block(), n_classes=n_classes)
+def preactresnet18(n_classes, first_block: str = 'cifar10'):
+    assert first_block in ['cifar10', 'imagenet']
+    first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
+    return PreActResNet('basic', [2, 2, 2, 2], first_block, n_classes=n_classes)
 
 
-def preactresnet34(n_classes):
-    return PreActResNet('basic', [3, 4, 6, 3], cifar10_first_block(), n_classes=n_classes)
+def preactresnet34(n_classes, first_block: str = 'cifar10'):
+    assert first_block in ['cifar10', 'imagenet']
+    first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
+    return PreActResNet('basic', [3, 4, 6, 3], first_block, n_classes=n_classes)
 
 
-def preactresnet50(n_classes):
-    return PreActResNet('bottleneck', [3, 4, 6, 3], cifar10_first_block(), n_classes=n_classes)
+def preactresnet50(n_classes, first_block: str = 'cifar10'):
+    assert first_block in ['cifar10', 'imagenet']
+    first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
+    return PreActResNet('bottleneck', [3, 4, 6, 3], first_block, n_classes=n_classes)
 
 
-def preactresnet101(n_classes):
-    return PreActResNet('bottleneck', [3, 4, 23, 3], cifar10_first_block(), n_classes=n_classes)
+def preactresnet101(n_classes, first_block: str = 'cifar10'):
+    assert first_block in ['cifar10', 'imagenet']
+    first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
+    return PreActResNet('bottleneck', [3, 4, 23, 3], first_block, n_classes=n_classes)
 
 
-def preactresnet152(n_classes):
-    return PreActResNet('bottleneck', [3, 8, 36, 3], cifar10_first_block(), n_classes=n_classes)
+def preactresnet152(n_classes, first_block: str = 'cifar10'):
+    assert first_block in ['cifar10', 'imagenet']
+    first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
+    return PreActResNet('bottleneck', [3, 8, 36, 3], first_block, n_classes=n_classes)
 
 
 def _test_overhead():

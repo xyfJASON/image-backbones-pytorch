@@ -1,45 +1,5 @@
 import warnings
 from typing import List, Dict, Any
-from yacs.config import CfgNode as CN
-
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
-
-
-def build_scheduler(optimizer: Optimizer, cfg: CN):
-    """
-    Args:
-        optimizer (Optimizer): torch.optim.Optimizer
-        cfg (CN): an instance of CfgNode with attributes:
-            - TRAIN.SCHED.NAME: 'CosineAnnealingLR', 'MultiStepLR'
-            - TRAIN.SCHED.COSINE_T_MAX
-            - TRAIN.SCHED.COSINE_ETA_MIN
-            - ... (other arguments of the scheduler)
-    """
-    cfg = cfg.TRAIN.SCHED
-    if cfg.NAME == 'CosineAnnealingLR':
-        scheduler = CosineAnnealingLR(
-            optimizer=optimizer,
-            T_max=cfg.COSINE_T_MAX,
-            eta_min=cfg.COSINE_ETA_MIN,
-        )
-    elif cfg.NAME == 'MultiStepLR':
-        scheduler = MultiStepLR(
-            optimizer=optimizer,
-            milestones=cfg.MULTISTEP_MILESTONES,
-            gamma=cfg.MULTISTEP_GAMMA,
-        )
-    else:
-        raise ValueError(f"Scheduler {cfg.NAME} is not supported.")
-
-    if hasattr(cfg, 'WARMUP_STEPS') and cfg.WARMUP_STEPS > 0:
-        scheduler = LRWarmupWrapper(
-            torch_scheduler=scheduler,
-            warmup_steps=cfg.WARMUP_STEPS,
-            warmup_factor=cfg.WARMUP_FACTOR,
-        )
-
-    return scheduler
 
 
 class LRWarmupWrapper:
@@ -105,21 +65,22 @@ class LRWarmupWrapper:
         self.__dict__.update(state_dict)
 
 
-def _test(scheduler_type='CosineAnnealingLR'):
+def _test(scheduler_type):
+    import torch.nn as nn
+    import torch.optim as optim
+    import matplotlib.pyplot as plt
+    from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
+
     model = nn.Linear(3, 4)
     optimizer = optim.SGD(model.parameters(), lr=0.1)
     optimizer_warmup = optim.SGD(model.parameters(), lr=0.1)
 
-    cfg = CN()
-    cfg.TRAIN = CN()
-    cfg.TRAIN.SCHED = CN()
-    cfg.TRAIN.SCHED.NAME = scheduler_type
-    cfg.TRAIN.SCHED.COSINE_T_MAX = 100
-    cfg.TRAIN.SCHED.COSINE_ETA_MIN = 0.001
-    cfg.TRAIN.SCHED.MULTISTEP_MILESTONES = [60, 80]
-    cfg.TRAIN.SCHED.MULTISTEP_GAMMA = 0.1
-    scheduler = build_scheduler(optimizer, cfg)
-    scheduler_warmup = build_scheduler(optimizer_warmup, cfg)
+    if scheduler_type == 'CosineAnnealingLR':
+        scheduler = CosineAnnealingLR(optimizer, 100, 0.001)
+        scheduler_warmup = CosineAnnealingLR(optimizer_warmup, 100, 0.001)
+    else:
+        scheduler = MultiStepLR(optimizer_warmup, [60, 80], 0.1)
+        scheduler_warmup = MultiStepLR(optimizer, [60, 80], 0.1)
     scheduler_warmup = LRWarmupWrapper(scheduler_warmup, warmup_steps=40, warmup_factor=0.01)
 
     epochs = range(100)
@@ -129,16 +90,12 @@ def _test(scheduler_type='CosineAnnealingLR'):
         lrs_warmup.append(optimizer_warmup.param_groups[0]['lr'])
         scheduler.step()
         scheduler_warmup.step()
-    print(lrs, lrs_warmup)
+    # print(lrs, lrs_warmup)
     plt.plot(epochs, lrs)
     plt.plot(epochs, lrs_warmup)
     plt.show()
 
 
 if __name__ == '__main__':
-    import torch.nn as nn
-    import torch.optim as optim
-    import matplotlib.pyplot as plt
-
     _test('CosineAnnealingLR')
     _test('MultiStepLR')

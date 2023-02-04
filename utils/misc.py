@@ -30,17 +30,6 @@ def init_seeds(seed: int = 0, cuda_deterministic: bool = False):
         cudnn.benchmark = True
 
 
-def setup_cfg(args):
-    # load config from file and command-line arguments
-    cfg = get_cfg_defaults()
-    if args.config_file is not None:
-        cfg.merge_from_file(args.config_file)
-    if args.opts is not None:
-        cfg.merge_from_list(args.opts)
-    cfg.freeze()
-    return cfg
-
-
 def check_freq(freq: int, step: int):
     assert isinstance(freq, int)
     return freq >= 1 and (step + 1) % freq == 0

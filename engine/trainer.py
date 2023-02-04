@@ -8,60 +8,87 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torchmetrics.classification import MulticlassAccuracy
 
 from metrics import AverageMeter
-from utils.logger import StatusTracker
-from utils.data import get_data_generator
 from utils.optimizer import optimizer_to_device
-from utils.misc import check_freq, get_bare_model
-from utils.dist import is_dist_avail_and_initialized, main_process_only, get_local_rank, all_reduce_mean
+from utils.logger import get_logger, StatusTracker
+from utils.data import get_dataloader, get_data_generator
+from utils.misc import get_time_str, init_seeds, create_exp_dir, check_freq, get_bare_model
+from utils.dist import get_rank, get_world_size, get_local_rank, is_dist_avail_and_initialized
+from utils.dist import init_distributed_mode, broadcast_objects, all_reduce_mean, main_process_only
+from engine.tools import build_model, build_optimizer, build_scheduler, build_dataset, find_resume_checkpoint
 
 
-class TrainLoop:
-    def __init__(
-            self,
-            model,
-            optimizer,
-            scheduler,
-            train_loader,
-            valid_loader,
-            device,
-            exp_dir,
-            logger,
-            batch_size,
-            micro_batch,
-            train_steps,
-            resume,
-            print_freq,
-            save_freq,
-            eval_freq,
-            use_fp16,
-            **kwargs,
-    ):
-        self.model = model
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.train_loader = train_loader
-        self.valid_loader = valid_loader
-        self.device = device
-        self.exp_dir = exp_dir
-        self.logger = logger
-        self.batch_size = batch_size
-        self.micro_batch = micro_batch
-        self.train_steps = train_steps
-        self.resume = resume
-        self.print_freq = print_freq
-        self.save_freq = save_freq
-        self.eval_freq = eval_freq
-        self.use_fp16 = use_fp16
+class Trainer:
+    def __init__(self, cfg, args):
+        self.cfg, self.args = cfg, args
+        self.time_str = get_time_str()
 
-        assert use_fp16 is False, 'use_fp16 is not supported for now'
-        if micro_batch == 0:
-            self.micro_batch = self.batch_size
+        # INITIALIZE DISTRIBUTED MODE
+        init_distributed_mode()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # INITIALIZE SEEDS
+        init_seeds(self.cfg.SEED + get_rank())
+
+        # CREATE EXPERIMENT DIRECTORY
+        self.exp_dir = create_exp_dir(
+            cfg=self.cfg,
+            time_str=self.time_str,
+            name=self.args.name,
+            no_interaction=self.args.no_interaction,
+        )
+        self.exp_dir = broadcast_objects(self.exp_dir)
+
+        # INITIALIZE LOGGER
+        self.logger = get_logger(log_file=os.path.join(self.exp_dir, f'output-{self.time_str}.log'))
+        self.logger.info(f'Experiment directory: {self.exp_dir}')
+        self.logger.info(f'Device: {self.device}')
+        self.logger.info(f"Number of devices: {get_world_size()}")
+
+        # BUILD DATASET & DATALOADER & DATA GENERATOR
+        train_set = build_dataset(self.cfg, split='train')
+        valid_set = build_dataset(self.cfg, split='valid')
+        self.train_loader = get_dataloader(
+            dataset=train_set,
+            shuffle=True,
+            drop_last=True,
+            batch_size=self.cfg.DATALOADER.BATCH_SIZE,
+            num_workers=self.cfg.DATALOADER.NUM_WORKERS,
+            pin_memory=self.cfg.DATALOADER.PIN_MEMORY,
+            prefetch_factor=self.cfg.DATALOADER.PREFETCH_FACTOR,
+        )
+        self.valid_loader = get_dataloader(
+            dataset=valid_set,
+            shuffle=False,
+            drop_last=False,
+            batch_size=self.cfg.DATALOADER.BATCH_SIZE,
+            num_workers=self.cfg.DATALOADER.NUM_WORKERS,
+            pin_memory=self.cfg.DATALOADER.PIN_MEMORY,
+            prefetch_factor=self.cfg.DATALOADER.PREFETCH_FACTOR,
+        )
+        effective_batch = self.cfg.DATALOADER.BATCH_SIZE * get_world_size()
+        self.logger.info(f'Size of training set: {len(train_set)}')
+        self.logger.info(f'Size of validation set: {len(valid_set)}')
+        self.logger.info(f'Batch size per device: {self.cfg.DATALOADER.BATCH_SIZE}')
+        self.logger.info(f'Effective batch size: {effective_batch}')
+
+        # BUILD MODEL, OPTIMIZER AND SCHEDULER
+        self.model = build_model(self.cfg)
+        self.model.to(self.device)
+        params = filter(lambda x: x.requires_grad, self.model.parameters())
+        self.optimizer = build_optimizer(params, self.cfg)
+        self.scheduler = build_scheduler(self.optimizer, self.cfg)
+
+        # LOAD PRETRAINED WEIGHTS
+        if self.cfg.MODEL.WEIGHTS is not None:
+            weights = torch.load(self.cfg.MODEL.WEIGHTS, map_location='cpu')
+            self.model.load_state_dict(weights['model'])
+            self.logger.info(f'Successfully load model from {self.cfg.MODEL.WEIGHTS}')
 
         # RESUME
         self.cur_step = 0
         self.best_acc = 0
-        if self.resume is not None:
-            resume_path = find_resume_checkpoint(self.exp_dir, self.resume)
+        if self.cfg.TRAIN.RESUME is not None:
+            resume_path = find_resume_checkpoint(self.exp_dir, self.cfg.TRAIN.RESUME)
             self.logger.info(f'Resume from {resume_path}')
             self.load_ckpt(resume_path)
 
@@ -76,22 +103,20 @@ class TrainLoop:
                 find_unused_parameters=False,
             )
 
-        # GET DATA GENERATOR
-        # XXX: `start_epoch` is used to set random seed for dataloader sampler in distributed mode,
-        # XXX: thus passing `cur_step` also does the work. However, it leads to less reproducibility
-        # XXX: if two runs resume differently, even with the same seed.
-        self.train_data_generator = get_data_generator(self.train_loader, start_epoch=self.cur_step)
-
         # DEFINE LOSSES
         self.cross_entropy = nn.CrossEntropyLoss()
 
         # DEFINE EVALUATION METRICS
-        self.metric_acc1 = MulticlassAccuracy(kwargs['n_classes'], top_k=1, average='micro').to(self.device)
-        self.metric_acc5 = MulticlassAccuracy(kwargs['n_classes'], top_k=5, average='micro').to(self.device)
+        self.metric_acc1 = MulticlassAccuracy(self.cfg.DATA.N_CLASSES, top_k=1, average='micro').to(self.device)
+        self.metric_acc5 = MulticlassAccuracy(self.cfg.DATA.N_CLASSES, top_k=5, average='micro').to(self.device)
         self.metric_loss = AverageMeter().to(self.device)
 
         # DEFINE STATUS TRACKER
-        self.status_tracker = StatusTracker(logger=self.logger, exp_dir=self.exp_dir, print_freq=self.print_freq)
+        self.status_tracker = StatusTracker(
+            logger=self.logger,
+            exp_dir=self.exp_dir,
+            print_freq=cfg.TRAIN.PRINT_FREQ,
+        )
 
     def load_ckpt(self, ckpt_path: str):
         ckpt = torch.load(ckpt_path, map_location='cpu')
@@ -125,13 +150,17 @@ class TrainLoop:
 
     def run_loop(self):
         self.logger.info('Start training...')
-        while self.cur_step < self.train_steps:
+        train_data_generator = get_data_generator(
+            dataloader=self.train_loader,
+            start_epoch=self.cur_step,
+        )
+        while self.cur_step < self.cfg.TRAIN.TRAIN_STEPS:
             # get a batch of data
-            batch = next(self.train_data_generator)
+            batch = next(train_data_generator)
             # run a step
             self.run_step(batch)
             # evaluate
-            if check_freq(self.eval_freq, self.cur_step):
+            if check_freq(self.cfg.TRAIN.EVAL_FREQ, self.cur_step):
                 # evaluate on training set
                 eval_status_train = self.evaluate(self.train_loader)
                 eval_status_train.pop('loss')
@@ -146,29 +175,32 @@ class TrainLoop:
                     self.best_acc = eval_status_valid['acc@1(valid_set)']
                     self.save_ckpt(os.path.join(self.exp_dir, 'ckpt', 'best.pt'))
             # save checkpoint
-            if check_freq(self.save_freq, self.cur_step):
+            if check_freq(self.cfg.TRAIN.SAVE_FREQ, self.cur_step):
                 self.save_ckpt(os.path.join(self.exp_dir, 'ckpt', f'step{self.cur_step:0>6d}.pt'))
             # synchronizes all processes
             if is_dist_avail_and_initialized():
                 dist.barrier()
             self.cur_step += 1
         # save the last checkpoint if not saved
-        if not check_freq(self.save_freq, self.cur_step - 1):
+        if not check_freq(self.cfg.TRAIN.SAVE_FREQ, self.cur_step - 1):
             self.save_ckpt(os.path.join(self.exp_dir, 'ckpt', f'step{self.cur_step-1:0>6d}.pt'))
         self.logger.info(f'Best valid accuracy: {self.best_acc}')
         self.logger.info('End of training')
 
     def run_step(self, batch):
+        micro_batch = self.cfg.DATALOADER.MICRO_BATCH
+        if micro_batch == 0:
+            micro_batch = self.cfg.DATALOADER.BATCH_SIZE
         self.model.train()
         self.optimizer.zero_grad()
         batchX, batchy = batch
         batch_size = batchX.shape[0]
         loss_value = 0.
-        for i in range(0, batch_size, self.micro_batch):
-            X = batchX[i:i+self.micro_batch].to(device=self.device, dtype=torch.float32)
-            y = batchy[i:i+self.micro_batch].to(device=self.device, dtype=torch.long)
+        for i in range(0, batch_size, micro_batch):
+            X = batchX[i:i+micro_batch].to(device=self.device, dtype=torch.float32)
+            y = batchy[i:i+micro_batch].to(device=self.device, dtype=torch.long)
             # no need to synchronize gradient before the last micro batch
-            no_sync = is_dist_avail_and_initialized() and (i + self.micro_batch) < batch_size
+            no_sync = is_dist_avail_and_initialized() and (i + micro_batch) < batch_size
             cm = self.model.no_sync() if no_sync else nullcontext()
             with cm:
                 scores = self.model(X)
@@ -189,15 +221,18 @@ class TrainLoop:
     def evaluate(self, dataloader=None):
         if dataloader is None:
             dataloader = self.valid_loader
+        micro_batch = self.cfg.DATALOADER.MICRO_BATCH
+        if micro_batch == 0:
+            micro_batch = self.cfg.DATALOADER.BATCH_SIZE
         self.model.eval()
         self.metric_acc1.reset()
         self.metric_acc5.reset()
         self.metric_loss.reset()
         for batchX, batchy in dataloader:
             batch_size = batchX.shape[0]
-            for i in range(0, batch_size, self.micro_batch):
-                X = batchX[i:i+self.micro_batch].to(device=self.device, dtype=torch.float32)
-                y = batchy[i:i+self.micro_batch].to(device=self.device, dtype=torch.long)
+            for i in range(0, batch_size, micro_batch):
+                X = batchX[i:i+micro_batch].to(device=self.device, dtype=torch.float32)
+                y = batchy[i:i+micro_batch].to(device=self.device, dtype=torch.long)
                 scores = self.model(X)
                 self.metric_acc1.update(scores, y)
                 self.metric_acc5.update(scores, y)
@@ -208,22 +243,3 @@ class TrainLoop:
             'acc@5': self.metric_acc5.compute().item(),
             'loss': self.metric_loss.compute().item(),
         }
-
-
-def find_resume_checkpoint(exp_dir, resume):
-    """ Checkpoints are named after 'stepxxxxxx.pt' """
-    if os.path.isfile(resume):
-        ckpt_path = resume
-    elif resume == 'best':
-        ckpt_path = os.path.join(exp_dir, 'ckpt', 'best.pt')
-    elif resume == 'latest':
-        d = dict()
-        for filename in os.listdir(os.path.join(exp_dir, 'ckpt')):
-            name, ext = os.path.splitext(filename)
-            if ext == '.pt' and name[:4] == 'step':
-                d.update({int(name[4:]): filename})
-        ckpt_path = os.path.join(exp_dir, 'ckpt', d[sorted(d)[-1]])
-    else:
-        raise ValueError(f'resume option {resume} is invalid')
-    assert os.path.isfile(ckpt_path), f'{ckpt_path} is not a .pt file'
-    return ckpt_path

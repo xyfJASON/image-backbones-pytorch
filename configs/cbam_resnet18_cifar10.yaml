@@ -1,2 +1,40 @@
+SEED: 1234                    # random seed
+
+DATA:
+  NAME: CIFAR-10              # name of the dataset
+  DATAROOT: /data/CIFAR-10/   # path to the dataset
+  IMG_SIZE: 32                # size of the image
+  N_CLASSES: 10               # number of classes in the dataset
+
+DATALOADER:
+  NUM_WORKERS: 4              # number of workers
+  PIN_MEMORY: True            # pin memory
+  PREFETCH_FACTOR: 2          # prefetch factor
+  BATCH_SIZE: 256             # batch size on each GPU
+  MICRO_BATCH: 0              # in case the GPU memory is too small, split a batch into micro batches
+                              # the gradients of micro batches will be aggregated for an update step
 MODEL:
-  NAME: cbam_resnet18
+  NAME: cbam_resnet18         # name of the model
+  FIRST_BLOCK: cifar10        # 'cifar10' or 'imagenet'
+  WEIGHTS: ~                  # path to the pretrained weights
+
+TRAIN:
+  TRAIN_STEPS: 64000          # training duration, one step means one gradient update
+  RESUME: ~                   # options: path to checkpoint, 'best', 'latest', None
+  PRINT_FREQ: 200             # frequency of printing status, in steps
+  SAVE_FREQ: 5000             # frequency of saving checkpoints, in steps
+  EVAL_FREQ: 1000             # frequency of evaluating the model, in steps
+  USE_FP16: False             # whether to use fp16
+
+  OPTIM:
+    TYPE: SGD                 # type of the optimizer
+    LR: 0.1                   # learning rate
+    WEIGHT_DECAY: 0.0005      # weight decay
+    MOMENTUM: 0.9             # momentum, for SGD
+
+  SCHED:
+    TYPE: CosineAnnealingLR   # type of the scheduler
+    T_MAX: 64000              # argument of CosineAnnealingLR
+    ETA_MIN: 0.001            # argument of CosineAnnealingLR
+    WARMUP_STEPS: 0           # warmup steps
+    WARMUP_FACTOR: 0.01       # warmup factor

@@ -11,67 +11,67 @@ from utils.scheduler import LRWarmupWrapper
 
 
 def build_model(cfg: CN):
-    if cfg.MODEL.NAME == 'vgg11':
+    if cfg.MODEL.NAME.lower() == 'vgg11':
         model = backbones.vgg11(
             n_classes=cfg.DATA.N_CLASSES,
         )
-    elif cfg.MODEL.NAME == 'vgg19_bn':
+    elif cfg.MODEL.NAME.lower() == 'vgg19_bn':
         model = backbones.vgg19_bn(
             n_classes=cfg.DATA.N_CLASSES,
         )
-    elif cfg.MODEL.NAME == 'resnet18':
+    elif cfg.MODEL.NAME.lower() == 'resnet18':
         model = backbones.resnet18(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'preactresnet18':
+    elif cfg.MODEL.NAME.lower() == 'preactresnet18':
         model = backbones.preactresnet18(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'resnext29_32x4d':
+    elif cfg.MODEL.NAME.lower() == 'resnext29_32x4d':
         model = backbones.resnext29_32x4d(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'resnext29_2x64d':
+    elif cfg.MODEL.NAME.lower() == 'resnext29_2x64d':
         model = backbones.resnext29_2x64d(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'se_resnet18':
+    elif cfg.MODEL.NAME.lower() == 'se_resnet18':
         model = backbones.se_resnet18(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'cbam_resnet18':
+    elif cfg.MODEL.NAME.lower() == 'cbam_resnet18':
         model = backbones.cbam_resnet18(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'mobilenet':
+    elif cfg.MODEL.NAME.lower() == 'mobilenet':
         model = backbones.mobilenet(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'shufflenet_1_0x_g8':
+    elif cfg.MODEL.NAME.lower() == 'shufflenet_1_0x_g8':
         model = backbones.shufflenet_1_0x_g8(
             n_classes=cfg.DATA.N_CLASSES,
             first_block=cfg.MODEL.FIRST_BLOCK,
         )
-    elif cfg.MODEL.NAME == 'vit_tiny':
+    elif cfg.MODEL.NAME.lower() == 'vit_tiny':
         model = backbones.vit_tiny(
             n_classes=cfg.DATA.N_CLASSES,
             img_size=cfg.DATA.IMG_SIZE,
             patch_size=cfg.MODEL.PATCH_SIZE,
         )
-    elif cfg.MODEL.NAME == 'vit_small':
+    elif cfg.MODEL.NAME.lower() == 'vit_small':
         model = backbones.vit_small(
             n_classes=cfg.DATA.N_CLASSES,
             img_size=cfg.DATA.IMG_SIZE,
             patch_size=cfg.MODEL.PATCH_SIZE,
         )
-    elif cfg.MODEL.NAME == 'vit_base':
+    elif cfg.MODEL.NAME.lower() == 'vit_base':
         model = backbones.vit_base(
             n_classes=cfg.DATA.N_CLASSES,
             img_size=cfg.DATA.IMG_SIZE,
@@ -84,7 +84,7 @@ def build_model(cfg: CN):
 
 def build_optimizer(params, cfg: CN):
     cfg = cfg.TRAIN.OPTIM
-    if cfg.NAME == 'SGD':
+    if cfg.TYPE == 'SGD':
         optimizer = optim.SGD(
             params=params,
             lr=cfg.LR,
@@ -92,7 +92,7 @@ def build_optimizer(params, cfg: CN):
             weight_decay=getattr(cfg, 'WEIGHT_DECAY', 0),
             nesterov=getattr(cfg, 'NESTEROV', False),
         )
-    elif cfg.NAME == 'Adam':
+    elif cfg.TYPE == 'Adam':
         optimizer = optim.Adam(
             params=params,
             lr=cfg.LR,
@@ -100,26 +100,26 @@ def build_optimizer(params, cfg: CN):
             weight_decay=getattr(cfg, 'WEIGHT_DECAY', 0),
         )
     else:
-        raise ValueError(f"Optimizer {cfg.NAME} is not supported.")
+        raise ValueError(f"Optimizer {cfg.TYPE} is not supported.")
     return optimizer
 
 
 def build_scheduler(optimizer: optim.Optimizer, cfg: CN):
     cfg = cfg.TRAIN.SCHED
-    if cfg.NAME == 'CosineAnnealingLR':
+    if cfg.TYPE == 'CosineAnnealingLR':
         scheduler = CosineAnnealingLR(
             optimizer=optimizer,
-            T_max=cfg.COSINE_T_MAX,
-            eta_min=cfg.COSINE_ETA_MIN,
+            T_max=cfg.T_MAX,
+            eta_min=cfg.ETA_MIN,
         )
-    elif cfg.NAME == 'MultiStepLR':
+    elif cfg.TYPE == 'MultiStepLR':
         scheduler = MultiStepLR(
             optimizer=optimizer,
-            milestones=cfg.MULTISTEP_MILESTONES,
-            gamma=cfg.MULTISTEP_GAMMA,
+            milestones=cfg.MILESTONES,
+            gamma=cfg.GAMMA,
         )
     else:
-        raise ValueError(f"Scheduler {cfg.NAME} is not supported.")
+        raise ValueError(f"Scheduler {cfg.TYPE} is not supported.")
 
     if hasattr(cfg, 'WARMUP_STEPS') and cfg.WARMUP_STEPS > 0:
         scheduler = LRWarmupWrapper(
@@ -140,7 +140,7 @@ def build_dataset(cfg, split, transforms=None, subset_ids=None, strict_valid_tes
         strict_valid_test: replace validation split with test split (or vice versa)
                            if the dataset doesn't have a validation / test split
     """
-    _check_split(cfg.DATA.NAME, split, strict_valid_test)
+    split = _check_split(cfg.DATA.NAME, split, strict_valid_test)
 
     if cfg.DATA.NAME.lower() in ['cifar10', 'cifar-10']:
         from datasets.CIFAR10 import CIFAR10, get_default_transforms

@@ -12,8 +12,8 @@ from utils.optimizer import optimizer_to_device
 from utils.logger import get_logger, StatusTracker
 from utils.data import get_dataloader, get_data_generator
 from utils.misc import get_time_str, init_seeds, create_exp_dir, check_freq, get_bare_model
+from utils.dist import init_distributed_mode, broadcast_objects, main_process_only
 from utils.dist import get_rank, get_world_size, get_local_rank, is_dist_avail_and_initialized
-from utils.dist import init_distributed_mode, broadcast_objects, all_reduce_mean, main_process_only
 from engine.tools import build_model, build_optimizer, build_scheduler, build_dataset, find_resume_checkpoint
 
 
@@ -31,7 +31,8 @@ class Trainer:
 
         # CREATE EXPERIMENT DIRECTORY
         self.exp_dir = create_exp_dir(
-            cfg=self.cfg,
+            cfg_dump=self.cfg.dump(),
+            resume=self.cfg.TRAIN.RESUME is not None,
             time_str=self.time_str,
             name=self.args.name,
             no_interaction=self.args.no_interaction,
@@ -65,6 +66,9 @@ class Trainer:
             pin_memory=self.cfg.DATALOADER.PIN_MEMORY,
             prefetch_factor=self.cfg.DATALOADER.PREFETCH_FACTOR,
         )
+        self.micro_batch = self.cfg.DATALOADER.MICRO_BATCH
+        if self.micro_batch == 0:
+            self.micro_batch = self.cfg.DATALOADER.BATCH_SIZE
         effective_batch = self.cfg.DATALOADER.BATCH_SIZE * get_world_size()
         self.logger.info(f'Size of training set: {len(train_set)}')
         self.logger.info(f'Size of validation set: {len(valid_set)}')
@@ -105,6 +109,7 @@ class Trainer:
 
         # DEFINE LOSSES
         self.cross_entropy = nn.CrossEntropyLoss()
+        self.loss_meter = AverageMeter().to(self.device)
 
         # DEFINE EVALUATION METRICS
         self.metric_acc1 = MulticlassAccuracy(self.cfg.DATA.N_CLASSES, top_k=1, average='micro').to(self.device)
@@ -158,7 +163,8 @@ class Trainer:
             # get a batch of data
             batch = next(train_data_generator)
             # run a step
-            self.run_step(batch)
+            train_status = self.run_step(batch)
+            self.status_tracker.track_status('Train', train_status, self.cur_step)
             # evaluate
             if check_freq(self.cfg.TRAIN.EVAL_FREQ, self.cur_step):
                 # evaluate on training set
@@ -184,55 +190,46 @@ class Trainer:
         # save the last checkpoint if not saved
         if not check_freq(self.cfg.TRAIN.SAVE_FREQ, self.cur_step - 1):
             self.save_ckpt(os.path.join(self.exp_dir, 'ckpt', f'step{self.cur_step-1:0>6d}.pt'))
+        self.status_tracker.close()
         self.logger.info(f'Best valid accuracy: {self.best_acc}')
         self.logger.info('End of training')
 
     def run_step(self, batch):
-        micro_batch = self.cfg.DATALOADER.MICRO_BATCH
-        if micro_batch == 0:
-            micro_batch = self.cfg.DATALOADER.BATCH_SIZE
         self.model.train()
         self.optimizer.zero_grad()
+        self.loss_meter.reset()
         batchX, batchy = batch
         batch_size = batchX.shape[0]
-        loss_value = 0.
-        for i in range(0, batch_size, micro_batch):
-            X = batchX[i:i+micro_batch].to(device=self.device, dtype=torch.float32)
-            y = batchy[i:i+micro_batch].to(device=self.device, dtype=torch.long)
+        for i in range(0, batch_size, self.micro_batch):
+            X = batchX[i:i+self.micro_batch].to(device=self.device, dtype=torch.float32)
+            y = batchy[i:i+self.micro_batch].to(device=self.device, dtype=torch.long)
             # no need to synchronize gradient before the last micro batch
-            no_sync = is_dist_avail_and_initialized() and (i + micro_batch) < batch_size
+            no_sync = is_dist_avail_and_initialized() and (i + self.micro_batch) < batch_size
             cm = self.model.no_sync() if no_sync else nullcontext()
             with cm:
                 scores = self.model(X)
                 loss = self.cross_entropy(scores, y)
                 loss.backward()
-            loss_value += loss.detach() * X.shape[0]
-        loss_value /= batch_size
-        loss_value = all_reduce_mean(loss_value)
+            self.loss_meter.update(loss.detach(), X.shape[0])
         train_status = dict(
-            loss=loss_value.item(),
+            loss=self.loss_meter.compute(),
             lr=self.optimizer.param_groups[0]['lr'],
         )
-        self.status_tracker.track_status('Train', train_status, self.cur_step)
         self.optimizer.step()
         self.scheduler.step()
+        return train_status
 
     @torch.no_grad()
-    def evaluate(self, dataloader=None):
-        if dataloader is None:
-            dataloader = self.valid_loader
-        micro_batch = self.cfg.DATALOADER.MICRO_BATCH
-        if micro_batch == 0:
-            micro_batch = self.cfg.DATALOADER.BATCH_SIZE
+    def evaluate(self, dataloader):
         self.model.eval()
         self.metric_acc1.reset()
         self.metric_acc5.reset()
         self.metric_loss.reset()
         for batchX, batchy in dataloader:
             batch_size = batchX.shape[0]
-            for i in range(0, batch_size, micro_batch):
-                X = batchX[i:i+micro_batch].to(device=self.device, dtype=torch.float32)
-                y = batchy[i:i+micro_batch].to(device=self.device, dtype=torch.long)
+            for i in range(0, batch_size, self.micro_batch):
+                X = batchX[i:i+self.micro_batch].to(device=self.device, dtype=torch.float32)
+                y = batchy[i:i+self.micro_batch].to(device=self.device, dtype=torch.long)
                 scores = self.model(X)
                 self.metric_acc1.update(scores, y)
                 self.metric_acc5.update(scores, y)

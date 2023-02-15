@@ -14,7 +14,6 @@ python main.py [-n NAME] [-c FILE] [--opts KEY1 VALUE1 KEY2 VALUE2]
 
 - To train on multiple GPUs, replace `python` with `torchrun --nproc_per_node NUM_GPUS`.
 - An experiment directory will be created under `./runs/` for each run, which is named after `NAME`, or the current time if `NAME` is not specified. The directory contains logs, checkpoints, tensorboard, etc.
-- File `./configs/default.py` contains all the configurations with their default values and descriptions. To override some of them, you can either create a `.yaml` file and pass it by `-c FILE`, or pass key-value pairs by `--opts`. See [yacs](https://github.com/rbgirshick/yacs#readme) for more.
 
 For example, to train resnet18 on CIFAR-10:
 

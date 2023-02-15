@@ -4,7 +4,6 @@ import random
 import shutil
 import datetime
 import numpy as np
-from yacs.config import CfgNode as CN
 
 import torch
 import torch.nn as nn
@@ -12,7 +11,6 @@ from torch.backends import cudnn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.dist import main_process_only
-from configs.defaults import get_cfg_defaults
 
 
 def init_seeds(seed: int = 0, cuda_deterministic: bool = False):
@@ -44,15 +42,23 @@ def get_bare_model(model: nn.Module or DDP):
 
 
 @main_process_only
-def create_exp_dir(cfg: CN, time_str: str = None, name: str = None, no_interaction: bool = False):
+def create_exp_dir(cfg_dump,
+                   resume: bool = False,
+                   time_str: str = None,
+                   name: str = None,
+                   no_interaction: bool = False):
     if time_str is None:
         time_str = get_time_str()
     if name is None:
         name = f'exp-{time_str}'
     exp_dir = os.path.join('runs', name)
-
-    if os.path.exists(exp_dir) and getattr(cfg.TRAIN, 'RESUME', None) is None:
-        cover = True if no_interaction else query_yes_no(f'{exp_dir} already exists! Cover it anyway?', default='no')
+    if os.path.exists(exp_dir) and not resume:
+        cover = True
+        if not no_interaction:
+            cover = query_yes_no(
+                question=f'{exp_dir} already exists! Cover it anyway?',
+                default='no',
+            )
         if cover:
             shutil.rmtree(exp_dir, ignore_errors=True)
         else:
@@ -60,9 +66,8 @@ def create_exp_dir(cfg: CN, time_str: str = None, name: str = None, no_interacti
     os.makedirs(exp_dir, exist_ok=True)
     os.makedirs(os.path.join(exp_dir, 'ckpt'), exist_ok=True)
     # os.makedirs(os.path.join(exp_dir, 'samples'), exist_ok=True)
-
     with open(os.path.join(exp_dir, f'config-{time_str}.yaml'), 'w') as f:
-        f.write(cfg.dump())
+        f.write(cfg_dump)
     return exp_dir
 
 

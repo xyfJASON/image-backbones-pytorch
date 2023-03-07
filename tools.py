@@ -61,18 +61,21 @@ def build_model(cfg: CN):
             n_classes=cfg.data.n_classes,
             img_size=cfg.data.img_size,
             patch_size=cfg.model.patch_size,
+            pdrop=getattr(cfg.model, 'pdrop', 0.1),
         )
     elif cfg.model.name.lower() == 'vit_small':
         model = backbones.vit_small(
             n_classes=cfg.data.n_classes,
             img_size=cfg.data.img_size,
             patch_size=cfg.model.patch_size,
+            pdrop=getattr(cfg.model, 'pdrop', 0.1),
         )
     elif cfg.model.name.lower() == 'vit_base':
         model = backbones.vit_base(
             n_classes=cfg.data.n_classes,
             img_size=cfg.data.img_size,
             patch_size=cfg.model.patch_size,
+            pdrop=getattr(cfg.model, 'pdrop', 0.1),
         )
     else:
         raise ValueError

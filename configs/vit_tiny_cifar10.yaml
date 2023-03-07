@@ -16,6 +16,7 @@ dataloader:
 model:
   name: vit_tiny
   patch_size: 4               # patch size
+  pdrop: 0.1                  # dropout rate
 
 train:
   train_steps: 64000          # training duration, one step means one gradient update

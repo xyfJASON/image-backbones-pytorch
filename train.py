@@ -39,6 +39,7 @@ def train(args, cfg):
     accelerator = accelerate.Accelerator()
     print(f'Process {accelerator.process_index} '
           f'using device: {accelerator.device}')
+    accelerator.wait_for_everyone()
     # CREATE EXPERIMENT DIRECTORY
     exp_dir = args.exp_dir
     if accelerator.is_local_main_process:
@@ -200,9 +201,12 @@ def train(args, cfg):
             scores = model(X)
             acc1, acc5 = accuracy(scores, y, topk=(1, 5))
             loss = cross_entropy(scores, y)
-            acc1 = accelerator.reduce(acc1, reduction='mean')
-            acc5 = accelerator.reduce(acc5, reduction='mean')
-            loss = accelerator.reduce(loss, reduction='mean')
+            # TODO: In accelerate 0.16.0, reduce operation always sums up the tensors regardless of
+            #       the argument `reduction`. Wait for a release that fixes this bug and change it
+            #       back to reduction='mean'.
+            acc1 = accelerator.reduce(acc1, reduction='sum') / accelerator.num_processes
+            acc5 = accelerator.reduce(acc5, reduction='sum') / accelerator.num_processes
+            loss = accelerator.reduce(loss, reduction='sum') / accelerator.num_processes
             acc1_meter.update(acc1.item(), X.shape[0])
             acc5_meter.update(acc5.item(), X.shape[0])
             loss_meter.update(loss.item(), X.shape[0])

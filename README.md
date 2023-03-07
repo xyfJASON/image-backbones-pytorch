@@ -9,16 +9,17 @@ My implementations of image backbones with PyTorch.
 ## Training
 
 ```shell
-python main.py [-n NAME] [-c FILE] [--opts KEY1 VALUE1 KEY2 VALUE2]
+accelerate-launch main.py [-c CONFIG] [-e EXP_DIR] [--xxx.yyy zzz ...]
 ```
 
-- To train on multiple GPUs, replace `python` with `torchrun --nproc_per_node NUM_GPUS`.
-- An experiment directory will be created under `./runs/` for each run, which is named after `NAME`, or the current time if `NAME` is not specified. The directory contains logs, checkpoints, tensorboard, etc.
+- This repo uses the [🤗 Accelerate](https://huggingface.co/docs/accelerate/index) library for multi-GPUs/fp16 supports. Please read the [documentation](https://huggingface.co/docs/accelerate/basic_tutorials/launch#using-accelerate-launch) on how to launch the scripts on different platforms.
+- Results (logs, checkpoints, tensorboard, etc.) of each run will be saved to `EXP_DIR`. If `EXP_DIR` is not specified, they will be saved to `runs/{current time}/`.
+- To modify some configuration items without creating a new configuration file, you can pass `--key value` pairs to the script. For example, the default optimizer in `./configs/resnet18_cifar10.yaml` is SGD, and if you want to change it to Adam without bothering to create a new file, you can simply pass `--train.optim.type Adam`.
 
 For example, to train resnet18 on CIFAR-10:
 
 ```shell
-python main.py -c ./configs/resnet18_cifar10.yaml
+accelerate-launch main.py -c ./configs/resnet18_cifar10.yaml
 ```
 
 <br/>

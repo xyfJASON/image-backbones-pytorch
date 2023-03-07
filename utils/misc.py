@@ -1,35 +1,11 @@
 import os
 import sys
-import random
 import shutil
 import datetime
-import numpy as np
-
-import torch
-import torch.nn as nn
-from torch.backends import cudnn
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-from utils.dist import main_process_only
-
-
-def init_seeds(seed: int = 0, cuda_deterministic: bool = False):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    # Speed-reproducibility tradeoff https://pytorch.org/docs/stable/notes/randomness.html
-    if cuda_deterministic:  # slower, more reproducible
-        cudnn.deterministic = True
-        cudnn.benchmark = False
-    else:  # faster, less reproducible
-        cudnn.deterministic = False
-        cudnn.benchmark = True
 
 
 def check_freq(freq: int, step: int):
-    assert isinstance(freq, int)
+    assert isinstance(freq, int) and freq >= 0
     return freq >= 1 and (step + 1) % freq == 0
 
 
@@ -37,38 +13,44 @@ def get_time_str():
     return datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
 
 
-def get_bare_model(model: nn.Module or DDP):
-    return model.module if isinstance(model, (nn.DataParallel, DDP)) else model
+def find_resume_checkpoint(exp_dir: str, resume: str):
+    """ Checkpoints are named after 'stepxxxxxx/' """
+    if os.path.isdir(resume):
+        ckpt_path = resume
+    elif resume == 'best':
+        ckpt_path = os.path.join(exp_dir, 'ckpt', 'best')
+    elif resume == 'latest':
+        d = dict()
+        for name in os.listdir(os.path.join(exp_dir, 'ckpt')):
+            if os.path.isdir(os.path.join(exp_dir, 'ckpt', name)) and name[:4] == 'step':
+                d.update({int(name[4:]): name})
+        ckpt_path = os.path.join(exp_dir, 'ckpt', d[sorted(d)[-1]])
+    else:
+        raise ValueError(f'resume option {resume} is invalid')
+    assert os.path.isdir(ckpt_path), f'{ckpt_path} is not a directory'
+    return ckpt_path
 
 
-@main_process_only
-def create_exp_dir(cfg_dump,
-                   resume: bool = False,
-                   time_str: str = None,
-                   name: str = None,
-                   no_interaction: bool = False):
+def create_exp_dir(
+        exp_dir: str,
+        cfg_dump: str,
+        exist_ok: bool = False,
+        time_str: str = None,
+        no_interaction: bool = False,
+):
     if time_str is None:
         time_str = get_time_str()
-    if name is None:
-        name = f'exp-{time_str}'
-    exp_dir = os.path.join('runs', name)
-    if os.path.exists(exp_dir) and not resume:
-        cover = True
-        if not no_interaction:
-            cover = query_yes_no(
-                question=f'{exp_dir} already exists! Cover it anyway?',
-                default='no',
-            )
-        if cover:
-            shutil.rmtree(exp_dir, ignore_errors=True)
-        else:
-            sys.exit(1)
+    if os.path.exists(exp_dir) and not exist_ok:
+        cover = no_interaction or query_yes_no(
+            question=f'{exp_dir} already exists! Cover it anyway?',
+            default='no',
+        )
+        shutil.rmtree(exp_dir, ignore_errors=True) if cover else sys.exit(1)
     os.makedirs(exp_dir, exist_ok=True)
     os.makedirs(os.path.join(exp_dir, 'ckpt'), exist_ok=True)
     # os.makedirs(os.path.join(exp_dir, 'samples'), exist_ok=True)
     with open(os.path.join(exp_dir, f'config-{time_str}.yaml'), 'w') as f:
         f.write(cfg_dump)
-    return exp_dir
 
 
 def query_yes_no(question, default="yes"):

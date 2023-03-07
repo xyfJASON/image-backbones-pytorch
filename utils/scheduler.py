@@ -1,5 +1,6 @@
 import warnings
 from typing import List, Dict, Any
+from torch.optim.lr_scheduler import _LRScheduler  # noqa
 
 
 class LRWarmupWrapper:
@@ -7,10 +8,10 @@ class LRWarmupWrapper:
     This class wraps the standard PyTorch LR scheduler to support warmup.
     Simplified from https://github.com/serend1p1ty/core-pytorch-utils/blob/main/cpu/lr_scheduler.py
     """
-    def __init__(self, torch_scheduler, warmup_steps: int = 0, warmup_factor: float = 0.1):
+    def __init__(self, torch_scheduler: _LRScheduler, warmup_steps: int = 0, warmup_factor: float = 0.1):
         """
         Args:
-            torch_scheduler (_LRScheduler): torch.optim.lr_scheduler._LRScheduler
+            torch_scheduler (_LRScheduler): an instance of torch.optim.lr_scheduler._LRScheduler
             warmup_steps (int): Number of update steps in warmup stage.
             warmup_factor (float): The factor of initial warmup lr relative to base lr. Defaults to 0.1.
         """

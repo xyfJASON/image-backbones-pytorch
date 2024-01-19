@@ -1,0 +1,6 @@
+tqdm
+yacs
+tensorboard
+torch~=1.13.1
+torchvision~=0.14.1
+accelerate~=0.21.0

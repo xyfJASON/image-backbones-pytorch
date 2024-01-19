@@ -25,7 +25,7 @@ def get_parser():
     )
     parser.add_argument(
         '-e', '--exp_dir', type=str,
-        help='Path to the experiment directory. Default to be ./runs/{current time}/',
+        help='Path to the experiment directory. Default to be ./runs/exp-{current time}/',
     )
     parser.add_argument(
         '-ni', '--no_interaction', action='store_true', default=False,
@@ -45,7 +45,7 @@ def train(args, cfg):
     if accelerator.is_local_main_process:
         create_exp_dir(
             exp_dir=exp_dir,
-            cfg_dump=cfg.dump(),
+            cfg_dump=cfg.dump(sort_keys=False),
             exist_ok=cfg.train.resume is not None,
             time_str=args.time_str,
             no_interaction=args.no_interaction,
@@ -75,9 +75,7 @@ def train(args, cfg):
     # BUILD DATASET & DATALOADER & DATA GENERATOR
     assert cfg.train.batch_size % accelerator.num_processes == 0
     batch_size_per_process = cfg.train.batch_size // accelerator.num_processes
-    micro_batch = cfg.dataloader.micro_batch
-    if micro_batch == 0:
-        micro_batch = batch_size_per_process
+    micro_batch = cfg.dataloader.micro_batch or batch_size_per_process
     train_set = get_dataset(
         name=cfg.data.name,
         dataroot=cfg.data.dataroot,
@@ -201,12 +199,9 @@ def train(args, cfg):
             scores = model(X)
             acc1, acc5 = accuracy(scores, y, topk=(1, 5))
             loss = cross_entropy(scores, y)
-            # TODO: In accelerate 0.16.0, reduce operation always sums up the tensors regardless of
-            #       the argument `reduction`. Wait for a release that fixes this bug and change it
-            #       back to reduction='mean'.
-            acc1 = accelerator.reduce(acc1, reduction='sum') / accelerator.num_processes
-            acc5 = accelerator.reduce(acc5, reduction='sum') / accelerator.num_processes
-            loss = accelerator.reduce(loss, reduction='sum') / accelerator.num_processes
+            acc1 = accelerator.reduce(acc1, reduction='mean')
+            acc5 = accelerator.reduce(acc5, reduction='mean')
+            loss = accelerator.reduce(loss, reduction='mean')
             acc1_meter.update(acc1.item(), X.shape[0])
             acc5_meter.update(acc5.item(), X.shape[0])
             loss_meter.update(loss.item(), X.shape[0])

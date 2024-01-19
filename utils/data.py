@@ -56,9 +56,10 @@ def get_dataset(name, dataroot, img_size, split, transforms=None, subset_ids=Non
     return dataset
 
 
-def get_data_generator(dataloader, is_main_process=True):
+def get_data_generator(dataloader, is_main_process=True, with_tqdm: bool = True):
+    disable = not (is_main_process and with_tqdm)
     while True:
-        for batch in tqdm.tqdm(dataloader, disable=not is_main_process, desc='Epoch', leave=False):
+        for batch in tqdm.tqdm(dataloader, disable=disable, desc='Epoch', leave=False):
             yield batch
 
 
@@ -79,7 +80,8 @@ def _test_dist():
     accelerator = accelerate.Accelerator()
     dataset = DummyDataset(80)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
-    data_generator = get_data_generator(dataloader)
+    dataloader = accelerator.prepare(dataloader)  # type: ignore
+    data_generator = get_data_generator(dataloader, with_tqdm=False)
     f = open(f"./output{accelerator.process_index}.txt", 'w')
     for i in range(100):
         batch = next(data_generator)

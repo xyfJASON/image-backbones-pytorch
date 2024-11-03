@@ -1,15 +1,17 @@
 """
 Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
-Identity Mappings in Deep Residual Networks
-https://arxiv.org/abs/1603.05027
+Deep Residual Learning for Image Recognition
+https://arxiv.org/abs/1512.03385
 """
 
 from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
-__all__ = ['PreActResNet', 'preactresnet18', 'preactresnet34', 'preactresnet50', 'preactresnet101', 'preactresnet152']
+__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']
 
 
 def weights_init(m):
@@ -41,39 +43,20 @@ def imagenet_first_block():
 
 def cifar10_first_block():
     """ 3x32x32 -> 64x32x32 """
-    return nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+    return nn.Sequential(
+        nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
+        nn.BatchNorm2d(64),
+        nn.ReLU(inplace=True),
+    )
 
 
-class PreActBasicBlock(nn.Module):
+class BasicBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, reduce: bool):
         super().__init__()
-        self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = conv3x3(in_channels, out_channels, 2 if reduce else 1)
-        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.bn1 = nn.BatchNorm2d(out_channels)
         self.conv2 = conv3x3(out_channels, out_channels, 1)
-        self.shortcut = nn.Sequential()
-        if reduce or in_channels != out_channels:
-            self.shortcut = nn.Sequential(
-                nn.BatchNorm2d(in_channels),
-                conv1x1(in_channels, out_channels, 2 if reduce else 1),
-            )
-
-    def forward(self, X: torch.Tensor):
-        out = self.conv1(F.relu(self.bn1(X), inplace=True))
-        out = self.conv2(F.relu(self.bn2(out), inplace=True))
-        out += self.shortcut(X)
-        return out
-
-
-class PreActBottleneckBlock(nn.Module):
-    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, reduce: bool):
-        super().__init__()
-        self.bn1 = nn.BatchNorm2d(in_channels)
-        self.conv1 = conv1x1(in_channels, mid_channels, 2 if reduce else 1)
-        self.bn2 = nn.BatchNorm2d(mid_channels)
-        self.conv2 = conv3x3(mid_channels, mid_channels, 1)
-        self.bn3 = nn.BatchNorm2d(mid_channels)
-        self.conv3 = conv1x1(mid_channels, out_channels, 1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
         self.shortcut = nn.Sequential()
         if reduce or in_channels != out_channels:
             self.shortcut = nn.Sequential(
@@ -81,40 +64,54 @@ class PreActBottleneckBlock(nn.Module):
                 nn.BatchNorm2d(out_channels),
             )
 
-    def forward(self, X: torch.Tensor):
-        out = self.conv1(F.relu(self.bn1(X), inplace=True))
-        out = self.conv2(F.relu(self.bn2(out), inplace=True))
-        out = self.conv3(F.relu(self.bn3(out), inplace=True))
-        out += self.shortcut(X)
+    def forward(self, x: Tensor):
+        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
+        out = F.relu(self.bn2(self.conv2(out)) + self.shortcut(x), inplace=True)
         return out
 
 
-class PreActResNet(nn.Module):
+class BottleneckBlock(nn.Module):
+    def __init__(self, in_channels: int, mid_channels: int, out_channels: int, reduce: bool):
+        super().__init__()
+        self.conv1 = conv1x1(in_channels, mid_channels, 2 if reduce else 1)
+        self.bn1 = nn.BatchNorm2d(mid_channels)
+        self.conv2 = conv3x3(mid_channels, mid_channels, 1)
+        self.bn2 = nn.BatchNorm2d(mid_channels)
+        self.conv3 = conv1x1(mid_channels, out_channels, 1)
+        self.bn3 = nn.BatchNorm2d(out_channels)
+        self.shortcut = nn.Sequential()
+        if reduce or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                conv1x1(in_channels, out_channels, 2 if reduce else 1),
+                nn.BatchNorm2d(out_channels),
+            )
+
+    def forward(self, x: Tensor):
+        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
+        out = F.relu(self.bn2(self.conv2(out)), inplace=True)
+        out = F.relu(self.bn3(self.conv3(out)) + self.shortcut(x), inplace=True)
+        return out
+
+
+class ResNet(nn.Module):
     def __init__(self, block_type: str, n_blocks: List[int], first_block: nn.Module, n_classes: int):
         assert block_type == 'basic' or block_type == 'bottleneck'
         super().__init__()
         self.first_block = first_block
         if block_type == 'basic':
-            self.conv2_x = self._make_layer(PreActBasicBlock, n_blocks[0], [64, 64], reduce=False)
-            self.conv3_x = self._make_layer(PreActBasicBlock, n_blocks[1], [64, 128], reduce=True)
-            self.conv4_x = self._make_layer(PreActBasicBlock, n_blocks[2], [128, 256], reduce=True)
-            self.conv5_x = self._make_layer(PreActBasicBlock, n_blocks[3], [256, 512], reduce=True)
+            self.conv2_x = self._make_layer(BasicBlock, n_blocks[0], [64, 64], reduce=False)
+            self.conv3_x = self._make_layer(BasicBlock, n_blocks[1], [64, 128], reduce=True)
+            self.conv4_x = self._make_layer(BasicBlock, n_blocks[2], [128, 256], reduce=True)
+            self.conv5_x = self._make_layer(BasicBlock, n_blocks[3], [256, 512], reduce=True)
         else:
-            self.conv2_x = self._make_layer(PreActBottleneckBlock, n_blocks[0], [64, 64, 256], reduce=False)
-            self.conv3_x = self._make_layer(PreActBottleneckBlock, n_blocks[1], [256, 128, 512], reduce=True)
-            self.conv4_x = self._make_layer(PreActBottleneckBlock, n_blocks[2], [512, 256, 1024], reduce=True)
-            self.conv5_x = self._make_layer(PreActBottleneckBlock, n_blocks[3], [1024, 512, 2048], reduce=True)
-        self.bn = nn.BatchNorm2d(512 if block_type == 'basic' else 2048)
+            self.conv2_x = self._make_layer(BottleneckBlock, n_blocks[0], [64, 64, 256], reduce=False)
+            self.conv3_x = self._make_layer(BottleneckBlock, n_blocks[1], [256, 128, 512], reduce=True)
+            self.conv4_x = self._make_layer(BottleneckBlock, n_blocks[2], [512, 256, 1024], reduce=True)
+            self.conv5_x = self._make_layer(BottleneckBlock, n_blocks[3], [1024, 512, 2048], reduce=True)
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.flatten = nn.Flatten()
         self.fc = nn.Linear(512 if block_type == 'basic' else 2048, n_classes)
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            if isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+        self.apply(weights_init)
 
     @staticmethod
     def _make_layer(ResidualBlock, n_block: int, channels: List[int], reduce: bool):
@@ -125,47 +122,51 @@ class PreActResNet(nn.Module):
             reduce = False
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor):
-        X = self.first_block(X)
-        X = self.conv2_x(X)
-        X = self.conv3_x(X)
-        X = self.conv4_x(X)
-        X = self.conv5_x(X)
-        X = F.relu(self.bn(X), inplace=True)
-        X = self.avgpool(X)
-        X = self.flatten(X)
-        X = self.fc(X)
-        return X
+    def forward(self, x: Tensor):
+        x = self.first_block(x)
+        x = self.conv2_x(x)
+        x = self.conv3_x(x)
+        x = self.conv4_x(x)
+        x = self.conv5_x(x)
+        x = self.avgpool(x)
+        x = self.flatten(x)
+        x = self.fc(x)
+        return x
 
 
-def preactresnet18(n_classes, first_block: str = 'cifar10'):
+def resnet18(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
-    return PreActResNet('basic', [2, 2, 2, 2], first_block, n_classes=n_classes)
+    model = ResNet('basic', [2, 2, 2, 2], first_block, n_classes=n_classes)
+    return model
 
 
-def preactresnet34(n_classes, first_block: str = 'cifar10'):
+def resnet34(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
-    return PreActResNet('basic', [3, 4, 6, 3], first_block, n_classes=n_classes)
+    model = ResNet('basic', [3, 4, 6, 3], first_block, n_classes=n_classes)
+    return model
 
 
-def preactresnet50(n_classes, first_block: str = 'cifar10'):
+def resnet50(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
-    return PreActResNet('bottleneck', [3, 4, 6, 3], first_block, n_classes=n_classes)
+    model = ResNet('bottleneck', [3, 4, 6, 3], first_block, n_classes=n_classes)
+    return model
 
 
-def preactresnet101(n_classes, first_block: str = 'cifar10'):
+def resnet101(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
-    return PreActResNet('bottleneck', [3, 4, 23, 3], first_block, n_classes=n_classes)
+    model = ResNet('bottleneck', [3, 4, 23, 3], first_block, n_classes=n_classes)
+    return model
 
 
-def preactresnet152(n_classes, first_block: str = 'cifar10'):
+def resnet152(n_classes, first_block: str = 'cifar10'):
     assert first_block in ['cifar10', 'imagenet']
     first_block = cifar10_first_block() if first_block == 'cifar10' else imagenet_first_block()
-    return PreActResNet('bottleneck', [3, 8, 36, 3], first_block, n_classes=n_classes)
+    model = ResNet('bottleneck', [3, 8, 36, 3], first_block, n_classes=n_classes)
+    return model
 
 
 def _test_overhead():
@@ -175,14 +176,14 @@ def _test_overhead():
     from utils.overhead import calc_flops, count_params, calc_inference_time
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = preactresnet18(n_classes=10).to(device)
-    X = torch.randn(10, 3, 32, 32).to(device)
+    model = resnet18(n_classes=10).to(device)
+    x = torch.randn(10, 3, 32, 32).to(device)
 
     count_params(model)
     print('=' * 60)
-    calc_flops(model, X)
+    calc_flops(model, x)
     print('=' * 60)
-    calc_inference_time(model, X)
+    calc_inference_time(model, x)
 
 
 if __name__ == '__main__':

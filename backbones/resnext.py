@@ -5,9 +5,11 @@ https://arxiv.org/abs/1611.05431
 """
 
 from typing import List, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 __all__ = ['ResNeXt', 'resnext29_2x64d', 'resnext29_32x4d', 'resnext50_32x4d', 'resnext101_64x4d', 'resnext101_32x4d']
 
@@ -63,10 +65,10 @@ class BottleneckBlock(nn.Module):
                 nn.BatchNorm2d(out_channels),
             )
 
-    def forward(self, X: torch.Tensor):
-        out = F.relu(self.bn1(self.conv1(X)), inplace=True)
+    def forward(self, x: Tensor):
+        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
         out = F.relu(self.bn2(self.conv2(out)), inplace=True)
-        out = F.relu(self.bn3(self.conv3(out)) + self.shortcut(X), inplace=True)
+        out = F.relu(self.bn3(self.conv3(out)) + self.shortcut(x), inplace=True)
         return out
 
 
@@ -95,16 +97,16 @@ class ResNeXt(nn.Module):
         self.width *= 2
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor):
-        X = self.first_block(X)
-        X = self.conv2(X)
-        X = self.conv3(X)
-        X = self.conv4(X)
-        X = self.conv5(X)
-        X = self.avgpool(X)
-        X = self.flatten(X)
-        X = self.fc(X)
-        return X
+    def forward(self, x: Tensor):
+        x = self.first_block(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.avgpool(x)
+        x = self.flatten(x)
+        x = self.fc(x)
+        return x
 
 
 def resnext29_2x64d(n_classes, first_block: str = 'cifar10'):
@@ -150,13 +152,13 @@ def _test_overhead():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = resnext29_32x4d(n_classes=10).to(device)
-    X = torch.randn(10, 3, 32, 32).to(device)
+    x = torch.randn(10, 3, 32, 32).to(device)
 
     count_params(model)
     print('=' * 60)
-    calc_flops(model, X)
+    calc_flops(model, x)
     print('=' * 60)
-    calc_inference_time(model, X)
+    calc_inference_time(model, x)
 
 
 if __name__ == '__main__':

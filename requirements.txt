@@ -1,6 +1,6 @@
 tqdm
-yacs
-tensorboard
-torch~=1.13.1
-torchvision~=0.14.1
-accelerate~=0.21.0
+omegaconf
+torch~=2.4.1
+torchvision~=0.19.1
+accelerate~=1.0.1
+tensorboard~=2.18.0

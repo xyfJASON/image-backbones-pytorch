@@ -5,8 +5,10 @@ https://arxiv.org/abs/1409.1556
 """
 
 from typing import List
+
 import torch
 import torch.nn as nn
+from torch import Tensor
 
 __all__ = ['VGG', 'vgg11', 'vgg13', 'vgg16', 'vgg19', 'vgg11_bn', 'vgg13_bn', 'vgg16_bn', 'vgg19_bn']
 
@@ -36,7 +38,7 @@ def conv3bnre(in_channels: int, out_channels: int):
 
 
 class VGG(nn.Module):
-    def __init__(self, cfg: List, bn: bool, n_classes: int) -> None:
+    def __init__(self, cfg: List, bn: bool, n_classes: int):
         super().__init__()
         self.features = self._make_layer(cfg, bn)
         self.flatten = nn.Flatten()
@@ -56,12 +58,12 @@ class VGG(nn.Module):
                 lst = x
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        X = self.features(X)
-        X = self.avgpool(X)
-        X = self.flatten(X)
-        X = self.classifier(X)
-        return X
+    def forward(self, x: Tensor):
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = self.flatten(x)
+        x = self.classifier(x)
+        return x
 
 
 cfgs = {
@@ -118,13 +120,13 @@ def _test_overhead():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # model = vgg11(n_classes=10).to(device)
     model = vgg19_bn(n_classes=10).to(device)
-    X = torch.randn(1, 3, 32, 32).to(device)
+    x = torch.randn(1, 3, 32, 32).to(device)
 
     count_params(model)
     print('=' * 60)
-    calc_flops(model, X)
+    calc_flops(model, x)
     print('=' * 60)
-    calc_inference_time(model, X)
+    calc_inference_time(model, x)
 
 
 if __name__ == '__main__':

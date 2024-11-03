@@ -1,6 +1,34 @@
 # Image-Backbones-Implementations
 
-My implementations of image backbones with PyTorch.
+Implement image backbones with PyTorch.
+
+<br/>
+
+
+
+## Installation
+
+> The code is tested with python 3.12, torch 2.4.1 and cuda 12.4.
+
+Clone this repo:
+```
+git clone https://github.com/xyfJASON/image-backbones-pytorch.git
+cd image-backbones-pytorch
+```
+
+Create and activate a conda environment:
+
+```shell
+conda create -n backbones python=3.12
+conda activate backbones
+```
+
+Install dependencies:
+
+```shell
+pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
+```
 
 <br/>
 
@@ -28,9 +56,7 @@ accelerate-launch main.py -c ./configs/resnet18_cifar10.yaml
 
 ## Results
 
-
-
-### CIFAR-10
+### CIFAR-10 Benchmark
 
 <table>
   <tr>

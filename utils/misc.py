@@ -1,7 +1,9 @@
 import os
 import sys
+import tqdm
 import shutil
 import datetime
+from typing import List
 
 
 def check_freq(freq: int, step: int):
@@ -11,6 +13,12 @@ def check_freq(freq: int, step: int):
 
 def get_time_str():
     return datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+
+
+def get_dataloader_iterator(dataloader, tqdm_kwargs):
+    while True:
+        for batch in tqdm.tqdm(dataloader, **tqdm_kwargs):
+            yield batch
 
 
 def find_resume_checkpoint(exp_dir: str, resume: str):
@@ -33,24 +41,40 @@ def find_resume_checkpoint(exp_dir: str, resume: str):
 
 def create_exp_dir(
         exp_dir: str,
-        cfg_dump: str,
-        exist_ok: bool = False,
+        conf_yaml: str,
+        subdirs: List[str] = ('ckpt', ),
         time_str: str = None,
-        no_interaction: bool = False,
+        exist_ok: bool = False,
+        cover_dir: bool = False,
 ):
-    if time_str is None:
-        time_str = get_time_str()
+    """Create the experiment directory.
+
+    Args:
+        exp_dir: The path to the experiment directory.
+        conf_yaml: A string of the configuration in YAML format.
+        subdirs: The subdirectories to create in the experiment directory.
+        time_str: The time string to append to the configuration file name.
+        exist_ok: Whether to allow the directory to exist. Note that some files may be overwritten if True.
+        cover_dir: Whether to cover the directory if it already exists. Note that all files will be removed if True.
+    """
+    # check if the directory exists
     if os.path.exists(exp_dir) and not exist_ok:
-        cover = no_interaction or query_yes_no(
+        cover = cover_dir or query_yes_no(
             question=f'{exp_dir} already exists! Cover it anyway?',
             default='no',
         )
         shutil.rmtree(exp_dir, ignore_errors=True) if cover else sys.exit(1)
+
+    # make directories
     os.makedirs(exp_dir, exist_ok=True)
-    os.makedirs(os.path.join(exp_dir, 'ckpt'), exist_ok=True)
-    # os.makedirs(os.path.join(exp_dir, 'samples'), exist_ok=True)
+    for subdir in subdirs:
+        os.makedirs(os.path.join(exp_dir, subdir), exist_ok=True)
+
+    # write configuration
+    if time_str is None:
+        time_str = get_time_str()
     with open(os.path.join(exp_dir, f'config-{time_str}.yaml'), 'w') as f:
-        f.write(cfg_dump)
+        f.write(conf_yaml)
 
 
 def query_yes_no(question, default="yes"):

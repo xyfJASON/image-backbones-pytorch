@@ -5,9 +5,11 @@ https://arxiv.org/abs/1707.01083
 """
 
 from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 __all__ = ['ShuffleNet', 'shufflenet_1_0x_g2', 'shufflenet_1_0x_g3', 'shufflenet_1_0x_g4', 'shufflenet_1_0x_g8']
 
@@ -21,10 +23,10 @@ def weights_init(m):
         nn.init.constant_(m.bias, 0)
 
 
-def channel_shuffle(X: torch.Tensor, n_groups: int):
-    N, C, H, W = X.shape
+def channel_shuffle(x: Tensor, n_groups: int):
+    N, C, H, W = x.shape
     c = int(C) // n_groups
-    return torch.transpose(X.view(N, n_groups, c, H, W), 1, 2).contiguous().view(N, C, H, W)
+    return torch.transpose(x.view(N, n_groups, c, H, W), 1, 2).contiguous().view(N, C, H, W)
 
 
 class BasicUnit(nn.Module):
@@ -43,12 +45,12 @@ class BasicUnit(nn.Module):
         self.bn3 = nn.BatchNorm2d(out_channels)
         self.avgpool = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
 
-    def forward(self, X: torch.Tensor):
-        out = F.relu(self.bn1(self.conv1(X)), inplace=True)
+    def forward(self, x: Tensor):
+        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
         out = channel_shuffle(out, self.n_groups)
         out = self.bn2(self.conv2(out))
         out = self.bn3(self.conv3(out))
-        out = torch.cat((out, self.avgpool(X)), dim=1) if self.reduce else out + X
+        out = torch.cat((out, self.avgpool(x)), dim=1) if self.reduce else out + x
         out = F.relu(out, inplace=True)
         return out
 
@@ -71,15 +73,15 @@ class ShuffleNet(nn.Module):
         layers.extend([BasicUnit(out_channels, out_channels, n_groups, False) for _ in range(n_block-1)])
         return nn.Sequential(*layers)
 
-    def forward(self, X: torch.Tensor):
-        X = self.first_block(X)
-        X = self.stage2(X)
-        X = self.stage3(X)
-        X = self.stage4(X)
-        X = self.avgpool(X)
-        X = self.flatten(X)
-        X = self.fc(X)
-        return X
+    def forward(self, x: Tensor):
+        x = self.first_block(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
+        x = self.stage4(x)
+        x = self.avgpool(x)
+        x = self.flatten(x)
+        x = self.fc(x)
+        return x
 
 
 def imagenet_first_block():
@@ -135,13 +137,13 @@ def _test_overhead():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = shufflenet_1_0x_g8(n_classes=10).to(device)
-    X = torch.randn(10, 3, 32, 32).to(device)
+    x = torch.randn(10, 3, 32, 32).to(device)
 
     count_params(model)
     print('=' * 60)
-    calc_flops(model, X)
+    calc_flops(model, x)
     print('=' * 60)
-    calc_inference_time(model, X)
+    calc_inference_time(model, x)
 
 
 if __name__ == '__main__':

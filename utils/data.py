@@ -56,13 +56,6 @@ def get_dataset(name, dataroot, img_size, split, transforms=None, subset_ids=Non
     return dataset
 
 
-def get_data_generator(dataloader, is_main_process=True, with_tqdm: bool = True):
-    disable = not (is_main_process and with_tqdm)
-    while True:
-        for batch in tqdm.tqdm(dataloader, disable=disable, desc='Epoch', leave=False):
-            yield batch
-
-
 def _test_dist():
     import accelerate
     from torch.utils.data import Dataset, DataLoader

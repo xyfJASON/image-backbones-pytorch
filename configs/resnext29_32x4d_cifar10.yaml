@@ -2,7 +2,7 @@ seed: 1234                    # random seed
 
 data:
   name: CIFAR-10              # name of the dataset
-  dataroot: /data/CIFAR-10/   # path to the dataset
+  dataroot: ~/data/CIFAR-10/  # path to the dataset
   img_size: 32                # size of the image
   n_classes: 10               # number of classes in the dataset
 
@@ -10,17 +10,17 @@ dataloader:
   num_workers: 4              # number of workers
   pin_memory: true            # pin memory
   prefetch_factor: 2          # prefetch factor
-  micro_batch: 0              # in case the gpu memory is too small, split a batch into micro batches
-                              # the gradients of micro batches will be aggregated for an update step
 
 model:
   name: resnext29_32x4d       # name of the model
   first_block: cifar10        # 'cifar10' or 'imagenet'
 
 train:
-  train_steps: 64000          # training duration, one step means one gradient update
+  n_steps: 64000              # training duration, one step means one gradient update
   batch_size: 256             # total batch size
-  resume: ~                   # options: path to checkpoint, 'best', 'latest', none
+  micro_batch_size: 0         # in case the gpu memory is too small, split a batch into micro batches
+                              # the gradients of micro batches will be aggregated for an update step
+
   print_freq: 200             # frequency of printing status, in steps
   save_freq: 5000             # frequency of saving checkpoints, in steps
   eval_freq: 1000             # frequency of evaluating the model, in steps
@@ -35,5 +35,3 @@ train:
     type: CosineAnnealingLR   # type of the scheduler
     t_max: 64000              # argument of CosineAnnealingLR
     eta_min: 0.001            # argument of CosineAnnealingLR
-    warmup_steps: 0           # warmup steps
-    warmup_factor: 0.01       # warmup factor

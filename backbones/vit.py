@@ -8,6 +8,7 @@ https://arxiv.org/abs/2010.11929
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 __all__ = ['ViT', 'vit_tiny', 'vit_small', 'vit_base', 'vit_large', 'vit_huge']
 
@@ -27,19 +28,12 @@ class SelfAttention(nn.Module):
         self.proj = nn.Linear(embed_dim, embed_dim)
         self.dropout = nn.Dropout(pdrop)
 
-    def forward(self, X: torch.Tensor):
-        """
-
-        Args:
-            X: Tensor[batch, n_tokens, embed_dim]
-
-        Returns: Tensor[batch, n_tokens, embed_dim]
-
-        """
-        bs, nt, ed = X.shape
-        k = self.key(X).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)    # [bs, nh, nt, dim]
-        q = self.query(X).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
-        v = self.value(X).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
+    def forward(self, x: Tensor):
+        """(batch, n_tokens, embed_dim) -> (batch, n_tokens, embed_dim)"""
+        bs, nt, ed = x.shape
+        k = self.key(x).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)    # [bs, nh, nt, dim]
+        q = self.query(x).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
+        v = self.value(x).view(bs, nt, self.n_head, int(ed) // self.n_head).permute(0, 2, 1, 3)  # [bs, nh, nt, dim]
         attn_mat = (q @ k.transpose(2, 3)) * self.scale                                          # [bs, nh, nt, nt]
         attn_mat = F.softmax(attn_mat, dim=-1)
         output = attn_mat @ v                                                                    # [bs, nh, nt, dim]
@@ -61,10 +55,10 @@ class TransformerEncoderBlock(nn.Module):
             nn.Dropout(pdrop),
         )
 
-    def forward(self, X: torch.Tensor):
-        X = self.selfattn(self.ln1(X)) + X
-        X = self.mlp(self.ln2(X)) + X
-        return X
+    def forward(self, x: Tensor):
+        x = self.selfattn(self.ln1(x)) + x
+        x = self.mlp(self.ln2(x)) + x
+        return x
 
 
 class ViT(nn.Module):
@@ -85,26 +79,19 @@ class ViT(nn.Module):
 
         self.classifier = nn.Linear(embed_dim, n_classes)
 
-    def forward(self, X: torch.Tensor):
-        """
-
-        Args:
-            X: Tensor[batch, C, H, W]
-
-        Returns: Tensor[batch, n_classes]
-
-        """
-        assert X.shape[-2:] == (self.img_size, self.img_size)
-        # X ==> embedded token
-        embedX = self.patch_embed(X)  # [batch, embed_dim, n_patches, n_patches]
-        bs, ed, w, h = embedX.shape
-        embedX = embedX.permute(0, 2, 3, 1).reshape(bs, w*h, ed)  # [batch, n_tokens, embed_dim]
-        # Concatenate with cls token
-        embedX = torch.cat([self.cls_token.repeat(bs, 1, 1), embedX], dim=1)  # [batch, n_tokens+1, embed_dim]
-        # Add position embedding
-        embedX = self.dropout(embedX + self.pos_embed)  # [batch, n_tokens+1, embed_dim]
+    def forward(self, x: Tensor):
+        """(batch, C, H, W) -> (batch, n_classes)"""
+        assert x.shape[-2:] == (self.img_size, self.img_size)
+        # x ==> embedded token
+        embedx = self.patch_embed(x)  # [batch, embed_dim, n_patches, n_patches]
+        bs, ed, w, h = embedx.shape
+        embedx = embedx.permute(0, 2, 3, 1).reshape(bs, w*h, ed)  # [batch, n_tokens, embed_dim]
+        # concatenate with cls token
+        embedx = torch.cat([self.cls_token.repeat(bs, 1, 1), embedx], dim=1)  # [batch, n_tokens+1, embed_dim]
+        # add position embedding
+        embedx = self.dropout(embedx + self.pos_embed)  # [batch, n_tokens+1, embed_dim]
         # encoder
-        feature = self.encoder(embedX)  # [batch, n_tokens+1, embed_dim]
+        feature = self.encoder(embedx)  # [batch, n_tokens+1, embed_dim]
         # classifier
         output = self.classifier(feature[:, 0, :])
         return output
@@ -138,13 +125,13 @@ def _test_overhead():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = vit_tiny(n_classes=10, img_size=32, patch_size=4).to(device)
-    X = torch.randn(1, 3, 32, 32).to(device)
+    x = torch.randn(1, 3, 32, 32).to(device)
 
     count_params(model)
     print('=' * 60)
-    calc_flops(model, X)
+    calc_flops(model, x)
     print('=' * 60)
-    calc_inference_time(model, X)
+    calc_inference_time(model, x)
 
 
 if __name__ == '__main__':

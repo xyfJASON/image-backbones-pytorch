@@ -6,6 +6,7 @@ https://arxiv.org/abs/1704.04861
 
 import torch
 import torch.nn as nn
+from torch import Tensor
 
 __all__ = ['MobileNet', 'mobilenet']
 
@@ -52,25 +53,25 @@ class MobileNet(nn.Module):
         self.fc = nn.Linear(1024, n_classes)
         self.apply(weights_init)
 
-    def forward(self, X: torch.Tensor):
-        X = self.first_block(X)
-        X = self.conv1(X)
-        X = self.conv2(X)
-        X = self.conv3(X)
-        X = self.conv4(X)
-        X = self.conv5(X)
-        X = self.conv6(X)
-        X = self.conv71(X)
-        X = self.conv72(X)
-        X = self.conv73(X)
-        X = self.conv74(X)
-        X = self.conv75(X)
-        X = self.conv8(X)
-        X = self.conv9(X)
-        X = self.avgpool(X)
-        X = self.flatten(X)
-        X = self.fc(X)
-        return X
+    def forward(self, x: Tensor):
+        x = self.first_block(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.conv6(x)
+        x = self.conv71(x)
+        x = self.conv72(x)
+        x = self.conv73(x)
+        x = self.conv74(x)
+        x = self.conv75(x)
+        x = self.conv8(x)
+        x = self.conv9(x)
+        x = self.avgpool(x)
+        x = self.flatten(x)
+        x = self.fc(x)
+        return x
 
 
 def imagenet_first_block():
@@ -105,13 +106,13 @@ def _test_overhead():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = mobilenet(n_classes=10).to(device)
-    X = torch.randn(10, 3, 32, 32).to(device)
+    x = torch.randn(10, 3, 32, 32).to(device)
 
     count_params(model)
     print('=' * 60)
-    calc_flops(model, X)
+    calc_flops(model, x)
     print('=' * 60)
-    calc_inference_time(model, X)
+    calc_inference_time(model, x)
 
 
 if __name__ == '__main__':

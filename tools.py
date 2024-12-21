@@ -119,5 +119,4 @@ def build_scheduler(optimizer: optim.Optimizer, conf: DictConfig):
         )
     else:
         raise ValueError(f'Scheduler {conf.type} is not supported.')
-
     return scheduler

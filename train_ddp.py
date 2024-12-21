@@ -1,11 +1,15 @@
 import os
+import math
 import tqdm
 import argparse
 from omegaconf import OmegaConf
+from contextlib import nullcontext
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from metrics import Accuracy
 from tools import build_model, build_optimizer, build_scheduler
@@ -14,6 +18,8 @@ from utils.logger import get_logger
 from utils.tracker import StatusTracker
 from utils.misc import get_time_str, check_freq, set_seed
 from utils.experiment import create_exp_dir, find_resume_checkpoint
+from utils.distributed import init_distributed_mode, is_main_process, on_main_process, is_dist_avail_and_initialized
+from utils.distributed import wait_for_everyone, cleanup, gather_tensor, get_rank, get_world_size, get_local_rank
 
 
 def get_parser():
@@ -36,44 +42,57 @@ def main():
     conf = OmegaConf.load(args.config)
     conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(unknown_args))
 
-    # SET DEVICE
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'Using device: {device}', flush=True)
+    # INITIALIZE DISTRIBUTED MODE
+    device = init_distributed_mode()
+    print(f'Process {get_rank()} using device: {device}', flush=True)
+    wait_for_everyone()
 
     # CREATE EXPERIMENT DIRECTORY
     exp_dir = args.exp_dir
-    create_exp_dir(
-        exp_dir=exp_dir, conf_yaml=OmegaConf.to_yaml(conf), subdirs=['ckpt'],
-        time_str=args.time_str, exist_ok=args.resume is not None, cover_dir=args.cover_dir,
-    )
+    if is_main_process():
+        create_exp_dir(
+            exp_dir=exp_dir, conf_yaml=OmegaConf.to_yaml(conf), subdirs=['ckpt'],
+            time_str=args.time_str, exist_ok=args.resume is not None, cover_dir=args.cover_dir,
+        )
 
     # INITIALIZE LOGGER
     logger = get_logger(
         log_file=os.path.join(exp_dir, f'output-{args.time_str}.log'),
-        use_tqdm_handler=True, is_main_process=True,
+        use_tqdm_handler=True, is_main_process=is_main_process(),
     )
 
     # INITIALIZE STATUS TRACKER
     status_tracker = StatusTracker(
         logger=logger, print_freq=conf.train.print_freq,
         tensorboard_dir=os.path.join(exp_dir, 'tensorboard'),
-        is_main_process=True,
+        is_main_process=is_main_process(),
     )
 
     # SET SEED
-    set_seed(conf.seed)
+    set_seed(conf.seed + get_rank())
     logger.info('=' * 19 + ' System Info ' + '=' * 18)
     logger.info(f'Experiment directory: {exp_dir}')
+    logger.info(f'Number of processes: {get_world_size()}')
+    logger.info(f'Distributed mode: {is_dist_avail_and_initialized()}')
+    wait_for_everyone()
 
     # BUILD DATASET & DATALOADER
+    assert conf.train.batch_size % get_world_size() == 0
+    bspp = conf.train.batch_size // get_world_size()
+    micro_batch_size = conf.train.micro_batch_size or bspp
     train_set = load_data(conf.data, split='train')
     valid_set = load_data(conf.data, split='valid')
-    train_loader = DataLoader(train_set, batch_size=conf.train.batch_size, shuffle=True, drop_last=True, **conf.dataloader)
-    valid_loader = DataLoader(valid_set, batch_size=conf.train.batch_size, shuffle=False, drop_last=False, **conf.dataloader)
+    train_sampler = DistributedSampler(train_set, num_replicas=get_world_size(), rank=get_rank(), shuffle=True)
+    valid_sampler = DistributedSampler(valid_set, num_replicas=get_world_size(), rank=get_rank(), shuffle=False)
+    train_loader = DataLoader(train_set, batch_size=bspp, sampler=train_sampler, drop_last=True, **conf.dataloader)
+    valid_loader = DataLoader(valid_set, batch_size=micro_batch_size, sampler=valid_sampler, drop_last=False, **conf.dataloader)
     logger.info('=' * 19 + ' Data Info ' + '=' * 20)
     logger.info(f'Size of training set: {len(train_set)}')
     logger.info(f'Size of validation set: {len(valid_set)}')
-    logger.info(f'Batch size: {conf.train.batch_size}')
+    logger.info(f'Batch size per process: {bspp}')
+    logger.info(f'Micro batch size: {micro_batch_size}')
+    logger.info(f'Gradient accumulation steps: {math.ceil(bspp / micro_batch_size)}')
+    logger.info(f'Total batch size: {conf.train.batch_size}')
 
     # BUILD MODEL, OPTIMIZER AND SCHEDULER
     model = build_model(conf)
@@ -85,7 +104,7 @@ def main():
     logger.info('=' * 50)
 
     # RESUME TRAINING
-    step, best_acc = 0, 0.
+    step, epoch, best_acc = 0, 0, 0.
     if args.resume is not None:
         resume_path = find_resume_checkpoint(exp_dir, args.resume)
         logger.info(f'Resume from {resume_path}')
@@ -93,11 +112,12 @@ def main():
         ckpt = torch.load(os.path.join(resume_path, 'model.pt'), map_location='cpu', weights_only=True)
         model.load_state_dict(ckpt['model'])
         logger.info(f'Successfully load model from {resume_path}')
-        # load training states (optimizer, scheduler, step, best_acc)
+        # load training states (optimizer, scheduler, step, epoch, best_acc)
         ckpt = torch.load(os.path.join(resume_path, 'training_states.pt'), map_location='cpu', weights_only=True)
         optimizer.load_state_dict(ckpt['optimizer'])
         scheduler.load_state_dict(ckpt['scheduler'])
         step = ckpt['step'] + 1
+        epoch = ckpt['epoch']
         best_acc = ckpt['best_acc']
         logger.info(f'Successfully load optimizer from {resume_path}')
         logger.info(f'Successfully load scheduler from {resume_path}')
@@ -109,41 +129,68 @@ def main():
     cross_entropy = nn.CrossEntropyLoss().to(device)
     accuracy_fn = Accuracy(topk=(1, 5), reduction='none')
 
-    # TRAINING FUNCTIONS
+    # PREPARE FOR DISTRIBUTED TRAINING
+    if is_dist_avail_and_initialized():
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        model = DDP(model, device_ids=[get_local_rank()], output_device=get_local_rank())
+    model_wo_ddp = model.module if is_dist_avail_and_initialized() else model
+    wait_for_everyone()
+
+    @on_main_process
     def save_ckpt(save_path: str):
         os.makedirs(save_path, exist_ok=True)
         # save model
         torch.save(dict(
-            model=model.state_dict(),
+            model=model_wo_ddp.state_dict(),
         ), os.path.join(save_path, 'model.pt'))
-        # save training states (optimizer, scheduler, step, best_acc)
+        # save training states (optimizer, scheduler, step, epoch, best_acc)
         torch.save(dict(
             optimizer=optimizer.state_dict(),
             scheduler=scheduler.state_dict(),
             step=step,
+            epoch=epoch,
             best_acc=best_acc,
         ), os.path.join(save_path, 'training_states.pt'))
 
+    def train_micro_batch(micro_batch, loss_scale, no_sync):
+        x, y = micro_batch
+        with model.no_sync() if no_sync else nullcontext():
+            logits = model(x)
+            loss = cross_entropy(logits, y)
+            loss = loss * loss_scale
+            loss.backward()
+        return loss.item()
+
     def train_step(batch):
-        x = batch[0].float().to(device)
-        y = batch[1].long().to(device)
-        logits = model(x)
-        loss = cross_entropy(logits, y)
+        batchx = batch[0].float().to(device)
+        batchy = batch[1].long().to(device)
+        # zero the gradients
         optimizer.zero_grad()
-        loss.backward()
+        # gradient accumulation
+        loss = torch.tensor(0., device=device)
+        for i in range(0, bspp, micro_batch_size):
+            x = batchx[i:i+micro_batch_size]
+            y = batchy[i:i+micro_batch_size]
+            loss_scale = x.shape[0] / bspp
+            no_sync = i + micro_batch_size < bspp and is_dist_avail_and_initialized()
+            loss_micro_batch = train_micro_batch((x, y), loss_scale, no_sync)
+            loss = loss + loss_micro_batch
+        # optimize
         optimizer.step()
         scheduler.step()
-        return dict(loss=loss.item(), lr=optimizer.param_groups[0]['lr'])
+        return dict(loss=loss, lr=optimizer.param_groups[0]['lr'])
 
     @torch.no_grad()
     def evaluate(dataloader):
         acc1_list, acc5_list = [], []
-        for x, y in tqdm.tqdm(dataloader, desc='Evaluating', leave=False):
+        for x, y in tqdm.tqdm(dataloader, desc='Evaluating', leave=False, disable=not is_main_process()):
             x, y = x.float().to(device), y.long().to(device)
             logits = model(x)
             acc1, acc5 = accuracy_fn(logits, y)
-            acc1_list.append(acc1)
-            acc5_list.append(acc5)
+            acc1 = gather_tensor(acc1)
+            acc5 = gather_tensor(acc5)
+            acc1_list.extend(acc1)
+            acc5_list.extend(acc5)
         acc1_list = torch.cat(acc1_list).cpu()
         acc5_list = torch.cat(acc5_list).cpu()
         return {
@@ -154,13 +201,16 @@ def main():
     # START TRAINING
     logger.info('Start training...')
     while step < conf.train.n_steps:
-        for _batch in tqdm.tqdm(train_loader, desc='Epoch', leave=False):
+        if hasattr(train_loader.sampler, 'set_epoch'):
+            train_loader.sampler.set_epoch(epoch)
+        for _batch in tqdm.tqdm(train_loader, desc='Epoch', leave=False, disable=not is_main_process()):
             if step >= conf.train.n_steps:
                 break
             # train a step
             model.train()
             train_status = train_step(_batch)
             status_tracker.track_status('Train', train_status, step)
+            wait_for_everyone()
             # validate
             model.eval()
             # evaluate
@@ -177,17 +227,22 @@ def main():
                 if eval_status_valid['acc@1(valid_set)'] > best_acc:
                     best_acc = eval_status_valid['acc@1(valid_set)']
                     save_ckpt(os.path.join(exp_dir, 'ckpt', 'best'))
+                wait_for_everyone()
             # save checkpoint
             if check_freq(conf.train.save_freq, step):
                 save_ckpt(os.path.join(exp_dir, 'ckpt', f'step{step:0>6d}'))
+                wait_for_everyone()
             step += 1
+        epoch += 1
     # save the last checkpoint if not saved
     if not check_freq(conf.train.save_freq, step - 1):
         save_ckpt(os.path.join(exp_dir, 'ckpt', f'step{step-1:0>6d}'))
     logger.info(f'Best valid accuracy: {best_acc:.4f}')
+    wait_for_everyone()
 
     # END OF TRAINING
     status_tracker.close()
+    cleanup()
     logger.info('End of training')
 
 

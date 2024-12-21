@@ -3,7 +3,8 @@ import logging
 
 
 class StatusTracker:
-    """Track status and print to logger and tensorboard."""
+    """Track training status and print to logger and tensorboard."""
+
     def __init__(
             self,
             logger: logging.Logger,
